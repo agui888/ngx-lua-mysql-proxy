@@ -1,0 +1,20 @@
+# mysql-sharding TCP stream server
+
+stream {
+    lua_shared_dict myshard 1m;
+
+    # define a TCP server listening on the port 1234:
+    server {
+        listen 1234;
+        lua_code_cache off;
+        init_by_lua_block {
+
+            ngx.shared.myshard:set("conn_id", 1000)
+            math.randomseed(ngx.time())
+
+        }
+
+        content_by_lua_file /usr/local/openresty/lualib/myshard/entry.lua;
+        
+    }
+}

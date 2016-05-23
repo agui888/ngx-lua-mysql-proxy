@@ -1,0 +1,90 @@
+-- Copyright (C) 2016 HuangChuanTong@WPS.CN
+--
+-- ngx.req tcp connecttion from client side
+--
+
+local conf = require "mysharding.conf"
+local pakage = require "mysharding.mysql.pakage"
+local const = require "const"
+
+local null = ngx.null
+local strsub = string.sub
+local strbyte = string.byte
+local strchar = string.char
+local strfind = string.find
+local format = string.format
+local error = error
+local tonumber = tonumber
+local rand = math.random
+
+local _M = {}
+_M._VERSION = '1.0'
+
+local mt = { __index = _M }
+
+local function _rand_str(length)
+    local s = ""
+    for i=1, tonumber(length) do
+        s = s .. strchar(rand(256)-1)
+    end
+    return s
+end
+
+function _M.new(self)
+    local sock = ngx.req.socket(true)
+    if not sock then
+        ngx.log(ngx.ERR, "ngx.req.socket() err=", err)
+        return nil, err
+    end
+
+    sock:settimeout(conf.REQ_TIMEOUT)
+
+    local map = {sock=sock, 
+        charset="utf8",
+        user="",
+        db="",
+        state=const.SERVER_STATUS_AUTOCOMMIT,
+        salt=_rand_str(20),
+        connection_id=ngx.shared.myshard:incr("conn_id", 1),
+        last_insert_id=-1,
+        affected_rows=-1,
+        auto_commit=true
+    }
+    return setmetatable(map, mt)
+end
+
+function _M.use_db(self, db)
+    print("conn use_db:", db)
+    self.db = db
+end
+
+function _M.handshake(self)
+
+    local err = pakage.send_handshake(self)
+    if err ~= nil then
+        ngx.log(ngx.ERR, "send handshake pkg failed=",err)
+        return false, err
+    end
+
+    local ok, errmsg, errno, sqlstate = pakage.recv_handshake_response(self)
+    if not ok then
+        ngx.log(ngx.ERR, "recv handshake response failed, err=[", errmsg,
+                "] errno=[", errno, "] sqlstate=[",sqlstate, "]")
+        return false, errmsg
+    end
+
+    return true, nil
+end
+
+
+
+function _M.event_loop(self)
+    while true do
+        local pkg, err = conn.read_package()
+        local result, err = conn.dispath(pkg)
+        local ok, err = conn.write(result)
+    end
+end
+
+
+return _M
