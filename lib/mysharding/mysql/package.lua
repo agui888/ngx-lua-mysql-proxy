@@ -127,7 +127,7 @@ function _M.to_binary_coded_string(data)
 end
 
 
-function _M.dump(data)
+local function _dump(data)
     local len = #data
     local bytes = new_tab(len, 0)
     for i = 1, len do
@@ -137,7 +137,7 @@ function _M.dump(data)
 end
 
 
-function _M.dumphex(data)
+local function _dumphex(data)
     local len = #data
     local bytes = new_tab(len, 0)
     for i = 1, len do
@@ -503,7 +503,12 @@ function _M.recv_handshake_response(conn)
     pos = pos + 23
 
     -- user name
-    conn.user, pos = _M.from_cstring(packet, pos)
+    local user, next_pos = _M.from_cstring(packet, pos)
+    if user == nil then
+        conn.user = user
+    else
+        pos = next_pos
+    end
     local authLen, pos = _M.get_byte3(packet, pos)
     local auth = strsub(packet, pos, pos+authLen)
     pos = pos + authLen
@@ -513,9 +518,9 @@ function _M.recv_handshake_response(conn)
     -- if !bytes.Equal(auth, checkAuth) {
     --     return NewDefaultError(ER_ACCESS_DENIED_ERROR, c.c.RemoteAddr().String(), c.user, "Yes")
     -- }
-    if  bor(conn.capability, const.CLIENT_CONNECT_WITH_DB) > 0 then
+    if bor(conn.capability, const.CLIENT_CONNECT_WITH_DB) > 0 then
         local db, pos = _M.from_cstring(packet, pos)
-        if strlen(db) == 0 then
+        if db == nil or strlen(db) == 0 then
             return true, nil
         end
         conn.use_db(db)
