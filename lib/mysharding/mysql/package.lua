@@ -115,7 +115,7 @@ function _M.from_cstring(data, i)
         return nil, nil
     end
 
-    return sub(data, i, last), last + 1
+    return strsub(data, i, last), last + 1
 end
 
 
@@ -172,13 +172,11 @@ function _M.send_packet(conn, req, size)
 
     conn.packet_no = conn.packet_no + 1
 
-    -- print("packet no: ", conn.packet_no, " size=", size)
+     print("packet no: ", conn.packet_no, " size=", size)
 
     local packet = _M.set_byte3(size) .. strchar(conn.packet_no) .. req
 
-    -- print("sending packet: ", _dump(packet))
-
-    -- print("sending packet... of size " .. #packet)
+    print("sending packet: ", _dump(packet))
 
     return sock:send(packet)
 end
@@ -191,11 +189,11 @@ function _M.recv_packet(conn)
         return nil, nil, "failed to receive packet header: " .. err
     end
 
-    print("packet header: ", _dump(data))
+    --print("packet header: ", _dumphex(data))
 
     local len, pos = _M.get_byte3(data, 1)
 
-    --print("packet length: ", len)
+    print("packet length: ", len)
 
     if len == 0 then
         return nil, nil, "empty packet"
@@ -207,20 +205,20 @@ function _M.recv_packet(conn)
 
     local num = strbyte(data, pos)
 
-    --print("recv packet: packet no: ", num)
+    print("recv packet: packet no: ", num)
 
     conn.packet_no = num
 
     data, err = sock:receive(len)
 
-    --print("receive returned")
+    print("receive returned")
 
     if not data then
         return nil, nil, "failed to read packet content: " .. err
     end
 
-    --print("packet content: ", _dump(data))
-    --print("packet content (ascii): ", data)
+    print("packet content: ", _dump(data))
+    print("packet content (ascii): ", data)
 
     local field_count = strbyte(data, 1)
 
@@ -234,7 +232,7 @@ function _M.recv_packet(conn)
     elseif field_count <= 250 then
         typ = "DATA"
     end
-
+    print("packet typ: ", typ)
     return data, typ
 end
 
@@ -464,22 +462,24 @@ function _M.recv_field_packet(self)
 end
 
 local function make_handshake_pkg(conn)
-    local pkg = _M.set_byte4(MIN_VERISON)
+    local pkg = strchar(MIN_VERISON)
                 .. _M.to_cstring(SERVER_VERISON)
                 .. _M.set_byte4(conn.connection_id)
                 .. _M.to_cstring(strsub(conn.salt, 1, 8))   -- auth-plugin-data-part-1
-                .. strchar(0x00)                            -- filter string
-                .. _M.set_byte2(tonumber(const.DEFAULT_CAPABILITY))
+                .. _M.set_byte2(const.DEFAULT_CAPABILITY)
                 .. strchar(const.UTF8_COLLATION_ID)         -- just charset=utf8
                 .. _M.set_byte2(conn.state)
-                .. strchar(rshift(const.DEFAULT_CAPABILITY, 16))
-                .. strchar(rshift(const.DEFAULT_CAPABILITY, 24))
+                .. strchar(band(rshift(const.DEFAULT_CAPABILITY, 16), 0xff))
+                .. strchar(band(rshift(const.DEFAULT_CAPABILITY, 24), 0xff))
                 .. strchar(0x15)                            -- filter string
                 .. strchar(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)    -- reserved 10 [00]
                 .. _M.to_cstring(strsub(conn.salt, 9, -1))  -- auth-plugin-data-part-2
-                .. strchar(0x00)                            -- filter string
-    local pkg_len = 3 + strlen(SERVER_VERISON) + 1 + 4 + 9 + 1 + 2 + 1 + 2 + 4 
-                + strlen(strsub(conn.salt, 9, -1)) + 1 + 1
+    local pkg_len = 1 + strlen(SERVER_VERISON) + 1 + 4 + 9 + 1 + 2 + 1 + 2 + 3 + 10
+                + strlen(strsub(conn.salt, 9, -1)) 
+
+    if band(const.DEFAULT_CAPABILITY, const.CLIENT_PROTOCOL_41) > 0 then
+			print("server using proto>4.1")
+	end
     return pkg, pkg_len
 end
 
@@ -506,13 +506,24 @@ function _M.recv_handshake_response(conn)
     end
 
     local raw_capability, pos = _M.get_byte4(packet, 1)
+--	print("raw-capability:", raw_capability)
     conn.capability =  bor(raw_capability, lshift(raw_capability, 16))
-
+    print("client-capability:", conn.capability)
+	
+    local cap = band(conn.capability, const.DEFAULT_CAPABILITY)
+--	print("server and client capability: ", cap)
+	if band(conn.capability, const.CLIENT_PROTOCOL_41) > 0 then
+			print("clent using proto >4.1")
+	else
+			print("warning..... using proto<=4.0")
+	end
     -- skip max packet size
-    pos = pos + 4
+    local size, pos = _M.get_byte4(packet, pos)
+	print("client.max-packet-size:", size)
 
     -- charset, skip, if you want to use another charset, use set names
-    -- conn.collation = CollationId(data[pos])
+    conn.collation_id = strbyte( strsub(packet, pos, pos + 1))
+	print("charset_id=", conn.collation_id, " pos=", pos)
     pos = pos + 1
 
     -- skip reserved 23[00]
@@ -523,12 +534,20 @@ function _M.recv_handshake_response(conn)
     if user ~= nil then
         conn.user = user
         pos = next_pos
+		print("connect with user: ", user, " pos=", pos)
     else
-        ngx.log(ngx.WARN, "did not user to auth.")
+        ngx.log(ngx.WARN, "user is empty to auth.")
     end
-    local authLen, pos = _M.get_byte3(packet, pos)
-    local auth = strsub(packet, pos, pos+authLen)
-    pos = pos + authLen
+    local auth_len = strbyte(strsub(packet, pos, pos + 1))
+	pos = pos + 1
+    local auth = strsub(packet, pos, pos+auth_len)
+    pos = pos + auth_len
+    
+	if auth_len > 0 then
+			print("auth-string-len: ", auth_len)
+	else
+			print("auth-string empty.")
+	end
 
     -- TODO:
     -- checkAuth := CalcPassword(c.salt, []byte(c.server.cfg.Password))

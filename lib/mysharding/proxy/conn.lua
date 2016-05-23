@@ -43,7 +43,7 @@ function _M.new(self)
     local conn_id = _M.conn_id
 	local myshard = ngx.shared.myshard
 	if myshard == nil then 
-		_M.conn_id = _M.conn_id + 2
+		_M.conn_id = _M.conn_id + 1
 	else
 		conn_id = myshard:incr("conn_id", 1)
 	end
@@ -54,7 +54,7 @@ function _M.new(self)
         db="",
 		packet_no=-1,
         state=const.SERVER_STATUS_AUTOCOMMIT,
-        salt=_rand_str(20),
+        salt="12345678901234567890", -- _rand_str(20),
         connection_id = conn_id,
         last_insert_id=-1,
         affected_rows=-1,
@@ -114,6 +114,9 @@ function _M.send_ok(self)
 		if band(self.capability, const.CLIENT_PROTOCOL_41) > 0 then
 				pkg = pkg .. package.set_byte4(0) 
 				pkg_len = pkg_len + 4
+		else
+				pkg = pkg .. strchar(0)
+				pkg_len = pkg_len + 1
 		end
 		return package.send_packet(self, pkg, pkg_len)
 end
