@@ -40,14 +40,15 @@ function request_entry()
 
 	local ok, err = c:handshake() -- mysql poto frist comminica
 	if ok ~= true then
+	    ngx.log(ngx.ERR, "handshake failed and close conn, err=", err)
 		abort(err)
 		return
 	end
 
-	ngx.log(ngx.INFO, ngx.var.remote_addr, "handshake finish, go into event_loop(), conn_id=%s", c.conn_id)
+	ngx.log(ngx.INFO, ngx.var.remote_addr, "handshake finish, go into event_loop(), conn_id=", c.conn_id)
 	-- entry event loop
 	c:event_loop()
-	ngx.log(ngx.INFO, "conn close, remote=[", ngx.var.remote_addr, "] conn_id=%s", c.conn_id)
+	ngx.log(ngx.INFO, "conn close, remote=[", ngx.var.remote_addr, ":", ngx.var.remote_port,"] conn_id=", c.conn_id)
 	c:close()
 end
 

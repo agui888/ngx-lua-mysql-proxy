@@ -2,7 +2,7 @@
 --
 -- ngx.req tcp connecttion from client side
 --
-
+local bit = require "bit"
 local conf = require "mysharding.conf"
 local package = require "mysharding.mysql.package"
 local const = require "mysharding.mysql.const"
@@ -13,6 +13,7 @@ local strbyte = string.byte
 local strchar = string.char
 local strfind = string.find
 local format = string.format
+local band = bit.band
 local error = error
 local tonumber = tonumber
 local rand = math.random
@@ -83,16 +84,53 @@ function _M.handshake(self)
         return false, errmsg
     end
 
+    local bytes, err = self:send_ok()
+	if err ~= nil then
+			ngx.log(ngx.ERR, "faild on send-ok in handshake, err=",err)
+			return false, err
+	end
+
     return true, nil
 end
 
 
+function _M.dispath(self, pkg)
+		return pkg, nil
+end
+
+function _M.write(self, resutl)
+		if result ~= nil then
+			self.sock:send(result)
+		end
+		return ok, nil
+end
+
+function _M.send_ok(self)
+		local pkg_len = 3
+		local pkg = strchar(const.OK_HEADER)
+				 ..  package.to_length_encode_int(0) -- AffectedRows
+				 ..  package.to_length_encode_int(0) -- InsertId
+
+		if band(self.capability, const.CLIENT_PROTOCOL_41) > 0 then
+				pkg = pkg .. package.set_byte4(0) 
+				pkg_len = pkg_len + 4
+		end
+		return package.send_packet(self, pkg, pkg_len)
+end
+
+function _M.close(self)
+		ngx.log(ngx.INFO, "close.")
+end
 
 function _M.event_loop(conn)
     while true do
-        local pkg, err = conn.read_package()
-        local result, err = conn.dispath(pkg)
-        local ok, err = conn.write(result)
+        local pkg, typ, err = package.recv_packet(conn)
+		if err ~= nil or pkg == nil then
+				ngx.log(ngx.WARN, "recv err=", err, "typ=",typ)
+				return
+		end
+        local result, err = conn:dispath(pkg)
+        local ok, err = conn:write(result)
     end
 end
 

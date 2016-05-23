@@ -9,6 +9,8 @@ local strbyte = string.byte
 local strchar = string.char
 local strfind = string.find
 local strlen =  string.len
+local format = string.format
+local concat = table.concat
 local bor = bit.bor
 local band = bit.band
 local lshift = bit.lshift
@@ -236,7 +238,19 @@ function _M.recv_packet(conn)
     return data, typ
 end
 
-
+function _M.to_length_encode_int(num)
+		if num <= 250 then
+				return strchar(num)
+		elseif num <= 0xffff then
+				return strchar(0xfc, num, band(rshift(num, 8), 0xff))
+		elseif num <= 0xffffff then
+				return strchar(0xfd, num, band(rshift(num, 8), 0xff), band(rshift(num, 16), 0xff))
+		elseif num <= 0xffffffffffffffff then
+				return strchar(0xfd, num, band(rshift(num, 8), 0xff), band(rshift(num, 16), 0xff),
+				                         band(rshift(num, 24), 0xff), band(rshift(num, 32), 0xff), 
+				                         band(rshift(num, 48), 0xff), band(rshift(num, 56), 0xff))
+		end
+end
 function _M.from_length_coded_bin(data, pos)
     local first = strbyte(data, pos)
 
@@ -471,7 +485,9 @@ end
 
 function _M.send_handshake(conn)
     local pkg, len = make_handshake_pkg(conn)
-	ngx.log(ngx.ERR, "handshake pkg_len=>", len)
+	
+	ngx.log(ngx.NOTICE, " send handshake pkg_len=>", len)
+
     local bytes, err = _M.send_packet(conn, pkg, len)
     if not bytes then
         return "failed to send client handshake packet: " .. err

@@ -46,5 +46,8 @@ _M.UTF8_COLLATION_NAME  = "utf8_general_ci"
 
 _M.SERVER_STATUS_AUTOCOMMIT = 0x0002
 
-
+_M.OK_HEADER          = 0x00
+_M.ERR_HEADER         = 0xff
+_M.EOF_HEADER         = 0xfe
+_M.LocalInFile_HEADER = 0xfb
 return _M
