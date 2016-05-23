@@ -4,8 +4,8 @@
 --
 
 local conf = require "mysharding.conf"
-local pakage = require "mysharding.mysql.pakage"
-local const = require "const"
+local package = require "mysharding.mysql.package"
+local const = require "mysharding.mysql.const"
 
 local null = ngx.null
 local strsub = string.sub
@@ -30,6 +30,7 @@ local function _rand_str(length)
     return s
 end
 
+_M.conn_id = 2000
 function _M.new(self)
     local sock = ngx.req.socket(true)
     if not sock then
@@ -38,6 +39,13 @@ function _M.new(self)
     end
 
     sock:settimeout(conf.REQ_TIMEOUT)
+    local conn_id = _M.conn_id
+	local myshard = ngx.shared.myshard
+	if myshard == nil then 
+		_M.conn_id = _M.conn_id + 2
+	else
+		conn_id = myshard:incr("conn_id", 1)
+	end
 
     local map = {sock=sock, 
         charset="utf8",
@@ -45,7 +53,7 @@ function _M.new(self)
         db="",
         state=const.SERVER_STATUS_AUTOCOMMIT,
         salt=_rand_str(20),
-        connection_id=ngx.shared.myshard:incr("conn_id", 1),
+        connection_id = conn_id,
         last_insert_id=-1,
         affected_rows=-1,
         auto_commit=true
@@ -60,13 +68,13 @@ end
 
 function _M.handshake(self)
 
-    local err = pakage.send_handshake(self)
+    local err = package.send_handshake(self)
     if err ~= nil then
         ngx.log(ngx.ERR, "send handshake pkg failed=",err)
         return false, err
     end
 
-    local ok, errmsg, errno, sqlstate = pakage.recv_handshake_response(self)
+    local ok, errmsg, errno, sqlstate = package.recv_handshake_response(self)
     if not ok then
         ngx.log(ngx.ERR, "recv handshake response failed, err=[", errmsg,
                 "] errno=[", errno, "] sqlstate=[",sqlstate, "]")
