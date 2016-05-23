@@ -51,12 +51,14 @@ function _M.new(self)
         charset="utf8",
         user="",
         db="",
+		packet_no=-1,
         state=const.SERVER_STATUS_AUTOCOMMIT,
         salt=_rand_str(20),
         connection_id = conn_id,
         last_insert_id=-1,
         affected_rows=-1,
-        auto_commit=true
+        auto_commit=true,
+		max_packet_size = 16 * 1024 * 1024 -- default 16 MB
     }
     return setmetatable(map, mt)
 end
@@ -86,7 +88,7 @@ end
 
 
 
-function _M.event_loop(self)
+function _M.event_loop(conn)
     while true do
         local pkg, err = conn.read_package()
         local result, err = conn.dispath(pkg)

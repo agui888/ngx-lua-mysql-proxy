@@ -165,14 +165,14 @@ function _M.compute_token(password, scramble)
 end
 
 
-function _M.send_packet(self, req, size)
-    local sock = self.sock
+function _M.send_packet(conn, req, size)
+    local sock = conn.sock
 
-    self.packet_no = self.packet_no + 1
+    conn.packet_no = conn.packet_no + 1
 
-    -- print("packet no: ", self.packet_no)
+    -- print("packet no: ", conn.packet_no, " size=", size)
 
-    local packet = set_byte3(size) .. strchar(self.packet_no) .. req
+    local packet = _M.set_byte3(size) .. strchar(conn.packet_no) .. req
 
     -- print("sending packet: ", _dump(packet))
 
@@ -189,9 +189,9 @@ function _M.recv_packet(conn)
         return nil, nil, "failed to receive packet header: " .. err
     end
 
-    --print("packet header: ", _dump(data))
+    print("packet header: ", _dump(data))
 
-    local len, pos = get_byte3(data, 1)
+    local len, pos = _M.get_byte3(data, 1)
 
     --print("packet length: ", len)
 
@@ -450,7 +450,6 @@ function _M.recv_field_packet(self)
 end
 
 local function make_handshake_pkg(conn)
-    print("DEFAULT_CAPABILITY=>", DEFAULT_CAPABILITY)
     local pkg = _M.set_byte4(MIN_VERISON)
                 .. _M.to_cstring(SERVER_VERISON)
                 .. _M.set_byte4(conn.connection_id)
@@ -472,6 +471,7 @@ end
 
 function _M.send_handshake(conn)
     local pkg, len = make_handshake_pkg(conn)
+	ngx.log(ngx.ERR, "handshake pkg_len=>", len)
     local bytes, err = _M.send_packet(conn, pkg, len)
     if not bytes then
         return "failed to send client handshake packet: " .. err
@@ -504,10 +504,11 @@ function _M.recv_handshake_response(conn)
 
     -- user name
     local user, next_pos = _M.from_cstring(packet, pos)
-    if user == nil then
+    if user ~= nil then
         conn.user = user
-    else
         pos = next_pos
+    else
+        ngx.log(ngx.WARN, "did not user to auth.")
     end
     local authLen, pos = _M.get_byte3(packet, pos)
     local auth = strsub(packet, pos, pos+authLen)
