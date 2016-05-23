@@ -2,9 +2,6 @@
 -- 
 -- MySQL proto const define
 
-
-module(..., package.seeall)
-
 local bit = require "bit"
 local band = bit.band
 local bxor = bit.bxor
@@ -15,7 +12,6 @@ local tohex = bit.tohex
 
 local _M = { _VERSION = '0.15' }
 local mt = { __index = _M }
-
 
 _M.CLIENT_LONG_PASSWORD = 0x0001
 _M.CLIENT_FOUND_ROWS = 0x0002
@@ -43,7 +39,6 @@ _M.CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA = 0x200000
 _M.DEFAULT_CAPABILITY = bor(CLIENT_LONG_PASSWORD, CLIENT_LONG_FLAG,
     CLIENT_CONNECT_WITH_DB, CLIENT_PROTOCOL_41,
     CLIENT_TRANSACTIONS, CLIENT_SECURE_CONNECTION)
-
 
 _M.UTF8_CHARSET         = "utf8"
 _M.UTF8_COLLATION_ID    = 33

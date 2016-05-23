@@ -3,14 +3,16 @@
 -- modfiy by: HuangChuanTong@WPS.CN
 -- mysql TCP 通信协议处理
 -- 
-local const = require("const")
+local const = require("mysharding.mysql.const")
 local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
 local strfind = string.find
 local strlen =  string.len
 local bor = bit.bor
-
+local band = bit.band
+local lshift = bit.lshift
+local rshift = bit.rshift
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok then
@@ -448,12 +450,13 @@ function _M.recv_field_packet(self)
 end
 
 local function make_handshake_pkg(conn)
+    print("DEFAULT_CAPABILITY=>", DEFAULT_CAPABILITY)
     local pkg = _M.set_byte4(MIN_VERISON)
                 .. _M.to_cstring(SERVER_VERISON)
                 .. _M.set_byte4(conn.connection_id)
                 .. _M.to_cstring(strsub(conn.salt, 1, 8))   -- auth-plugin-data-part-1
                 .. strchar(0x00)                            -- filter string
-                .. _M.set_byte2(const.DEFAULT_CAPABILITY)
+                .. _M.set_byte2(tonumber(const.DEFAULT_CAPABILITY))
                 .. strchar(const.UTF8_COLLATION_ID)         -- just charset=utf8
                 .. _M.set_byte2(conn.state)
                 .. strchar(rshift(const.DEFAULT_CAPABILITY, 16))
@@ -490,27 +493,27 @@ function _M.recv_handshake_response(conn)
     conn.capability =  bor(raw_capability, lshift(raw_capability, 16))
 
     -- skip max packet size
-    pos += 4
+    pos = pos + 4
 
     -- charset, skip, if you want to use another charset, use set names
     -- conn.collation = CollationId(data[pos])
-    pos =+ 1
+    pos = pos + 1
 
     -- skip reserved 23[00]
-    pos += 23
+    pos = pos + 23
 
     -- user name
     conn.user, pos = _M.from_cstring(packet, pos)
     local authLen, pos = _M.get_byte3(packet, pos)
     local auth = strsub(packet, pos, pos+authLen)
-    pos += authLen
+    pos = pos + authLen
 
     -- TODO:
     -- checkAuth := CalcPassword(c.salt, []byte(c.server.cfg.Password))
     -- if !bytes.Equal(auth, checkAuth) {
     --     return NewDefaultError(ER_ACCESS_DENIED_ERROR, c.c.RemoteAddr().String(), c.user, "Yes")
     -- }
-    if  bor(conn.capability|, const.CLIENT_CONNECT_WITH_DB) > 0 then
+    if  bor(conn.capability, const.CLIENT_CONNECT_WITH_DB) > 0 then
         local db, pos = _M.from_cstring(packet, pos)
         if strlen(db) == 0 then
             return true, nil
