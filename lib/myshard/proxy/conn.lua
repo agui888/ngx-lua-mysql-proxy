@@ -95,15 +95,17 @@ function _M.close(self)
         ngx.log(ngx.INFO, "close.")
 end
 
-
+function _M.send_packet(self, pkg, size)
+	return packet.send_packet(self, pkg, size)
+end
 function _M.dispath(self, pkg)
     local cmd = strbyte(pkg, 1)
-    local data = strsub(pkg, 2, -1)
-
+    local data = strsub(pkg, 2)
+    ngx.log(ngx.INFO, "dispath---pkg-->[ ",  data, " ]")
     if cmd == commad.COM_QUIT then
         return "closed"
     elseif cmd == commad.COM_QUERY then
-        return proxy_query.handle(data)
+        return proxy_query.handle(self, data)
     end
     return pkg, nil
 end
@@ -120,13 +122,13 @@ function _M.event_loop(self)
     while true do
         pkg, typ, err = packet.recv_packet(self)
         if err ~= nil then
-            ngx.log(ngx.WARN, "recv err=", err, "typ=", typ, " data=", pkg)
+            ngx.log(ngx.WARN, "recv err=", err, " typ=", typ, " data=", pkg)
             return
         end
 
-        if typ == "EOF" or typ == "ERR" then
+        if typ == "ERR" then
             return
-        elseif type == "DATA" then
+        elseif typ == "DATA" then
             err = self:dispath(pkg)
             if err ~= nil then
                 if err ~= "closed" then

@@ -33,13 +33,12 @@ cmd = COMMAND.split("\n")
 
 for line in cmd:
 	l = line.split()
-	print 'local _M.%s = %s \t\t-- %s %s' % (l[1] , l[0], l[2], l[3])
+	print '_M.%s = %s \t\t-- %s %s' % (l[1] , l[0], l[2], l[3])
 
 print '\n\n'
 
-print 'local _M.name = {'
+print '_M.name = {}'
 for line in cmd:
 	l = line.split()
-	print '\t%s:"%s",' % (l[0], l[1])
+	print '_M.name[%s] = %s' % (l[0], l[1])
 
-print '}'
