@@ -3,6 +3,7 @@
 -- modfiy by: HuangChuanTong@WPS.CN
 -- mysql TCP 通信协议处理
 -- 
+local bit = require "bit"
 local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
@@ -97,6 +98,7 @@ end
 
 
 function _M.set_byte4(n)
+    -- print("band", band)
     return strchar(band(n, 0xff),
                    band(rshift(n, 8), 0xff),
                    band(rshift(n, 16), 0xff),
@@ -227,7 +229,7 @@ function _M.recv_packet(conn)
     elseif field_count <= 250 then
         typ = "DATA"
     end
-    print("recv packet typ: ", typ)
+    print("recv packet typ: ", typ, " cmd: ", field_count)
     return data, typ
 end
 
@@ -458,3 +460,4 @@ function _M.recv_field_packet(self)
 
     return parse_field_packet(packet)
 end
+return _M

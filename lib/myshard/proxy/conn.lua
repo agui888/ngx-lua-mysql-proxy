@@ -7,6 +7,7 @@ local conf = require "myshard.conf"
 local mysqld = require "myshard.mysql.mysqld"
 local const = require "myshard.mysql.const"
 local charset = require "myshard.mysql.charset"
+local packet = require "myshard.mysql.packet"
 local utils = require "myshard.proxy.utils"
 
 local null = ngx.null
@@ -23,6 +24,7 @@ local _M = {_VERSION = '0.1'}
 local mt = { __index = _M }
 
 
+_M.conn_id = 2000
 function _M.new(self)
     local sock = ngx.req.socket(true)
     if not sock then
@@ -35,7 +37,6 @@ function _M.new(self)
     local myshard = ngx.shared.myshard
     if myshard == nil then 
         -- # TODO: conn_id
-        _M.conn_id = 2000
         _M.conn_id = _M.conn_id + 1
     else
         conn_id = myshard:incr("conn_id", 1)
@@ -83,7 +84,7 @@ function _M.handshake(self)
     --     return NewDefaultError(ER_ACCESS_DENIED_ERROR, c.c.RemoteAddr().String(), c.user, "Yes")
     -- }
 
-    local bytes, err = mysqld.send_ok()
+    local bytes, err = mysqld.send_ok(self)
     if err ~= nil then
         ngx.log(ngx.ERR, "faild on send-ok in handshake, err=",err)
         return false, err
@@ -107,15 +108,15 @@ function _M.close(self)
         ngx.log(ngx.INFO, "close.")
 end
 
-function _M.event_loop(conn)
+function _M.event_loop(self)
     while true do
-        local pkg, typ, err = packet.recv_packet(conn)
+        local pkg, typ, err = packet.recv_packet(self)
         if err ~= nil or pkg == nil then
                 ngx.log(ngx.WARN, "recv err=", err, "typ=",typ)
                 return
         end
-        local result, err = conn:dispath(pkg)
-        local ok, err = conn:write(result)
+        local result, err = self:dispath(pkg)
+        local ok, err = self:write(result)
     end
 end
 

@@ -37,7 +37,7 @@ local function _make_handshake_pkg(conn)
             .. strchar(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)    -- reserved 10 [00]
             .. packet.to_cstring(strsub(conn.salt, 9, -1))  -- auth-plugin-data-part-2
 
-    local pkg_len = 1 + strlen() + 1 + 4 + 9 + 1 + 2 + 1 + 2 + 3 + 10
+    local pkg_len = 1 + strlen(SERVER_VERISON) + 1 + 4 + 9 + 1 + 2 + 1 + 2 + 3 + 10
                 + strlen(strsub(conn.salt, 9, -1)) 
     return pkg, pkg_len
 end
@@ -57,16 +57,16 @@ end
 
 -- args: conn was myshard.proxy.conn
 function _M.read_handshake_response(conn)
-    local packet, typ, err= packet.recv_packet(conn)
-    if not packet then
+    local data, typ, err= packet.recv_packet(conn)
+    if not data then
         return false, err
     end
     if typ == "ERR" then
-        local errno, msg, sqlstate = packet.parse_err_packet(packet)
+        local errno, msg, sqlstate = packet.parse_err_packet(data)
         return false, msg, errno, sqlstate
     end
 
-    local raw_capability, pos = packet.get_byte4(packet, 1)
+    local raw_capability, pos = packet.get_byte4(data, 1)
     conn.capability =  bor(raw_capability, lshift(raw_capability, 16))
     -- print("client-capability:", conn.capability)
     -- local cap = band(conn.capability, const.DEFAULT_CAPABILITY)
@@ -76,11 +76,11 @@ function _M.read_handshake_response(conn)
     --         print("warning..... using proto<=4.0")
     -- end
     -- max packet size
-    local size, pos = packet.get_byte4(packet, pos)
+    local size, pos = packet.get_byte4(data, pos)
     print("client.max-packet-size:", size)
 
     -- charset, if you want to use another charset, use set names
-    conn.collation_id = strbyte( strsub(packet, pos, pos + 1))
+    conn.collation_id = strbyte( strsub(data, pos, pos + 1))
     print("charset_id=", conn.collation_id, " pos=", pos)
     pos = pos + 1
 
@@ -88,7 +88,7 @@ function _M.read_handshake_response(conn)
     pos = pos + 23
 
     -- user name
-    local user, next_pos = packet.from_cstring(packet, pos)
+    local user, next_pos = packet.from_cstring(data, pos)
     if user ~= nil then
         conn.user = user
         pos = next_pos
@@ -97,9 +97,9 @@ function _M.read_handshake_response(conn)
         ngx.log(ngx.WARN, "user is empty to auth.")
     end
 
-    local auth_len = strbyte(strsub(packet, pos, pos + 1))
+    local auth_len = strbyte(strsub(data, pos, pos + 1))
     pos = pos + 1
-    local auth = strsub(packet, pos, pos+auth_len)
+    local auth = strsub(data, pos, pos+auth_len)
     pos = pos + auth_len
     
     if auth_len > 0 then
@@ -110,7 +110,7 @@ function _M.read_handshake_response(conn)
     end
 
     if bor(conn.capability, const.CLIENT_CONNECT_WITH_DB) > 0 then
-        local db, pos = packet.from_cstring(packet, pos)
+        local db, pos = packet.from_cstring(data, pos)
         if db == nil or strlen(db) == 0 then
             return true, nil
         end
@@ -132,6 +132,6 @@ function _M.send_ok(conn)
         pkg = pkg .. strchar(0)
         pkg_len = pkg_len + 1
     end
-    return packet.send_packet(self, pkg, pkg_len)
+    return packet.send_packet(conn, pkg, pkg_len)
 end
 return _M
