@@ -183,9 +183,9 @@ function _M.recv_packet(conn)
     local sock = conn.sock
     local data, err = sock:receive(4) -- packet header
     if not data then
-		if err == 'closed' then
-			return nil, nil, err 
-		end
+        if err == 'closed' then
+            return nil, nil, err 
+        end
         return nil, nil, "failed to receive packet header: " .. err
     end
 

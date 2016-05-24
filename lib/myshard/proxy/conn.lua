@@ -92,16 +92,17 @@ end
 
 
 function _M.close(self)
-        ngx.log(ngx.INFO, "close.")
+    ngx.log(ngx.INFO, "close.")
 end
 
-function _M.send_packet(self, pkg, size)
-	return packet.send_packet(self, pkg, size)
-end
+_M.send_packet = packet.send_packet
+
 function _M.dispath(self, pkg)
     local cmd = strbyte(pkg, 1)
     local data = strsub(pkg, 2)
+
     ngx.log(ngx.INFO, "dispath---pkg-->[ ",  data, " ]")
+
     if cmd == commad.COM_QUIT then
         return "closed"
     elseif cmd == commad.COM_QUERY then

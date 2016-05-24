@@ -202,7 +202,10 @@ local function _recv_packet(self)
 
     local data, err = sock:receive(4) -- packet header
     if not data then
-        return nil, nil, "failed to receive packet header: " .. err
+        if err == 'closed' then
+            return nil, nil, -1, err 
+        end
+        return nil, nil, -2, "failed to receive packet header: " .. err
     end
 
     --print("packet header: ", _dump(data))
@@ -212,11 +215,11 @@ local function _recv_packet(self)
     --print("packet length: ", len)
 
     if len == 0 then
-        return nil, nil, "empty packet"
+        return nil, nil, -3, "empty packet"
     end
 
     if len > self._max_packet_size then
-        return nil, nil, "packet size too big: " .. len
+        return nil, nil, -4, "packet size too big: " .. len
     end
 
     local num = strbyte(data, pos)
@@ -230,7 +233,7 @@ local function _recv_packet(self)
     --print("receive returned")
 
     if not data then
-        return nil, nil, "failed to read packet content: " .. err
+        return nil, nil, -5, "failed to read packet content: " .. err
     end
 
     --print("packet content: ", _dump(data))
@@ -249,7 +252,7 @@ local function _recv_packet(self)
         typ = "DATA"
     end
 
-    return data, typ
+    return data, typ, len
 end
 
 
@@ -446,12 +449,12 @@ end
 
 
 local function _recv_field_packet(self)
-    local packet, typ, err = _recv_packet(self)
+    local packet, typ, len, err = _recv_packet(self)
     if not packet then
         return nil, err
     end
     
-	if typ == "ERR" then
+    if typ == "ERR" then
         local errno, msg, sqlstate = _parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
@@ -462,7 +465,7 @@ local function _recv_field_packet(self)
 
     -- typ == 'DATA'
 
-    return packet, nil, nil
+    return packet, type, len, nil
 end
 
 
@@ -539,7 +542,7 @@ function _M.connect(self, opts)
         return 1
     end
 
-    local packet, typ, err = _recv_packet(self)
+    local packet, typ, len, err = _recv_packet(self)
     if not packet then
         return nil, err
     end
@@ -656,7 +659,7 @@ function _M.connect(self, opts)
         + #token + 1 + #database + 1
 
     print("packet content length: ", packet_len)
-	-- print("packet content: ", _dump(concat(req, "")))
+    -- print("packet content: ", _dump(concat(req, "")))
 
     local bytes, err = _send_packet(self, req, packet_len)
     if not bytes then
@@ -665,7 +668,7 @@ function _M.connect(self, opts)
 
     print("packet sent ", bytes, " bytes")
 
-    local packet, typ, err = _recv_packet(self)
+    local packet, typ, len, err = _recv_packet(self)
     if not packet then
         return nil, "client failed to receive the result packet: " .. err
     end
@@ -762,7 +765,7 @@ end
 _M.send_query = send_query
 
 
-local function read_result(self, out_conn, est_nrows)
+local function read_result(self, out_conn)
     if self.state ~= STATE_COMMAND_SENT then
         return nil, "cannot read result in the current context: " .. self.state
     end
@@ -772,17 +775,10 @@ local function read_result(self, out_conn, est_nrows)
         return nil, "not initialized"
     end
 
-    local packet, typ, err = _recv_packet(self)
+    local packet, typ, len, err = _recv_packet(self)
     if not packet then
         return nil, err
     end
-
-	local bytes, err = out_conn.sock:send(packet)
-    if err ~= nil then
-		ngx.log(ngx.NOTICE, "failed to send query resutl to client, err=", err)
-		self:close()
-		return nil, err
-	end
 
     if typ == "ERR" then
         self.state = STATE_CONNECTED
@@ -808,29 +804,37 @@ local function read_result(self, out_conn, est_nrows)
 
     -- typ == 'DATA'
 
+    local bytes, err = out_conn:send_packet(packet, len) -- 
+    if err ~= nil then
+        ngx.log(ngx.NOTICE, "failed to send query resutl header packet to client, err=", err)
+        self:close()
+        return nil, err
+    end
+
     --print("read the result set header packet")
 
     local field_count, extra = _parse_result_set_header_packet(packet)
 
     --print("field count: ", field_count)
 
-	--    local cols = new_tab(field_count, 0)
+    --    local cols = new_tab(field_count, 0)
     for i = 1, field_count do
-        local col, err, errno, sqlstate = _recv_field_packet(self)
-        if not col then
+        local packet, err, errno, sqlstate = _recv_field_packet(self)
+        if not packet then
             return nil, err, errno, sqlstate
         end
+        local len = errno
 
-	    bytes, err = out_conn.sock:send(packet)
+        bytes, err = out_conn:send_packet(packet, len)
         if err ~= nil then
-		    ngx.log(ngx.NOTICE, "failed to send query resutl of col to client, err=",
-				err, " remain [", field_count-i+1,"]cols did not read")
-			self:close()
-		    return nil, err
-  	    end
+            ngx.log(ngx.NOTICE, "failed to send query resutl of col to client, err=",
+                err, " remain [", field_count-i+1,"]cols did not read")
+            self:close()
+            return nil, err
+          end
     end
 
-    local packet, typ, err = _recv_packet(self)
+    packet, typ, len, err = _recv_packet(self)
     if not packet then
         return nil, err
     end
@@ -839,33 +843,29 @@ local function read_result(self, out_conn, est_nrows)
         return nil, "unexpected packet type " .. typ .. " while eof packet is "
             .. "expected"
     end
-	local bytes, err = out_conn.sock:send(packet)
+    bytes, err = out_conn:send_packet(packet, len)
     if err ~= nil then
-	    ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
-		self:close()
-	    return nil, err
-  	end
+        ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
+        self:close()
+        return nil, err
+    end
 
     -- typ == 'EOF'
-
-    local compact = self.compact
-
-    local rows = new_tab(est_nrows or 4, 0)
     local i = 0
     while true do
         --print("reading a row")
 
-        packet, typ, err = _recv_packet(self)
+        packet, typ, len, err = _recv_packet(self)
         if not packet then
             return nil, err
         end
 
-		bytes, err = out_conn.sock:send(packet)
-	    if err ~= nil then
-		    ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
-			self:close()
-		    return nil, err
-	  	end
+        bytes, err = out_conn.sock:send(packet)
+        if err ~= nil then
+            ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
+            self:close()
+            return nil, err
+          end
 
         if typ == 'EOF' then
             local warning_count, status_flags = _parse_eof_packet(packet)
@@ -883,7 +883,6 @@ local function read_result(self, out_conn, est_nrows)
         -- end
 
         -- typ == 'DATA'
-
 --        local row = _parse_row_data_packet(packet, cols, compact)
         i = i + 1
 --        rows[i] = row
@@ -896,13 +895,15 @@ end
 _M.read_result = read_result
 
 -- args: out_conn was the instance of myshard.proxy.conn
-function _M.query(self, out_conn, query, est_nrows)
+function _M.query(self, out_conn, query)
+
     local bytes, err = send_query(self, query)
     if not bytes then
         return nil, "failed to send query: " .. err
     end
 
-    return read_result(self, out_conn, est_nrows)
+    return read_result(self, out_conn)
+
 end
 
 

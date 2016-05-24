@@ -27,8 +27,6 @@ local error = error
 local tonumber = tonumber
 
 
-local mysql_host = "127.0.0.1"
-local mysql_port = 3306
 ---------------------------------------------
 function abort(msg)
 	ngx.say(msg)
