@@ -20,7 +20,7 @@ local mt = { __index = _M }
 
 -- 模块导出功能函数
 function _M.handle(conn, query)
-    print("query-string: ", query)
+    print("query-string=[", query, "],db=[", conn.db, "]")
     local db, err = mysql.new()
     assert(db)
     db:set_timeout(conf.BACKEN_TIMEOUT)
@@ -29,8 +29,9 @@ function _M.handle(conn, query)
         host=conf.MySQL_HOST,
         port=conf.MySQL_PORT,
         user=conf.MySQL_USER,
-        db=conn.db,
-        password=conf.MySQL_PASS
+        database=conn.db,
+        password=conf.MySQL_PASS,
+		charset='utf8'
     }
     if not ok then
         ngx.log(ngx.ERR, "error when connect to [",conf.MySQL_HOST, ":", conf.MySQL_PORT, 
@@ -40,6 +41,11 @@ function _M.handle(conn, query)
     assert(ok)
 
     local res, err, errno, sqlstate = db:query(conn, query)
+	if err ~= nil then
+		print("query err=", err)
+		print("conn.db=", conn.db)
+	end
+
     assert(res)
     print("end handl-query: ", query)
     return nil

@@ -173,7 +173,7 @@ function _M.send_packet(conn, req, size)
 
     local packet = _M.set_byte3(size) .. strchar(conn.packet_no) .. req
 
-    print("sending packet: ", _dump(packet))
+    -- print("sending packet: ", _dump(packet))
 
     return sock:send(packet)
 end

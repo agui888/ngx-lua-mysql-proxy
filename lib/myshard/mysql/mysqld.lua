@@ -67,7 +67,7 @@ function _M.read_handshake_response(conn)
     end
 
     local raw_capability, pos = packet.get_byte4(data, 1)
-    conn.capability =  bor(raw_capability, lshift(raw_capability, 16))
+    conn.capability =raw_capability --  bor(raw_capability, lshift(raw_capability, 16))
     -- print("client-capability:", conn.capability)
     -- local cap = band(conn.capability, const.DEFAULT_CAPABILITY)
     -- if band(conn.capability, const.CLIENT_PROTOCOL_41) > 0 then
@@ -114,7 +114,11 @@ function _M.read_handshake_response(conn)
         if db == nil or strlen(db) == 0 then
             return true, nil
         end
-        conn.use_db(db)
+
+		print("Connect with db: ", db)
+        conn.db = db
+	else
+			print("without use db to connect.")
     end
     return true, nil
 end

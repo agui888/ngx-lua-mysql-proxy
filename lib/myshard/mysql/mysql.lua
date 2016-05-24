@@ -554,20 +554,20 @@ function _M.connect(self, opts)
 
     self.protocol_ver = strbyte(packet)
 
-    print("protocol version: ", self.protocol_ver)
+    -- print("protocol version: ", self.protocol_ver)
 
     local server_ver, pos = _from_cstring(packet, 2)
     if not server_ver then
         return nil, "bad handshake initialization packet: bad server version"
     end
 
-    print("server version: ", server_ver)
+    -- print("server version: ", server_ver)
 
     self._server_ver = server_ver
 
     local thread_id, pos = _get_byte4(packet, pos)
 
-    print("thread id: ", thread_id)
+    -- print("thread id: ", thread_id)
 
     local scramble = sub(packet, pos, pos + 8 - 1)
     if not scramble then
@@ -580,7 +580,7 @@ function _M.connect(self, opts)
     local capabilities  -- server capabilities
     capabilities, pos = _get_byte2(packet, pos)
 
-    print(format("server capabilities: %#x", capabilities))
+    -- print(format("server capabilities: %#x", capabilities))
 
     self._server_lang = strbyte(packet, pos)
     pos = pos + 1
@@ -589,19 +589,19 @@ function _M.connect(self, opts)
 
     self._server_status, pos = _get_byte2(packet, pos)
 
-    print("server status: ", self._server_status)
+    -- print("server status: ", self._server_status)
 
     local more_capabilities
     more_capabilities, pos = _get_byte2(packet, pos)
 
     capabilities = bor(capabilities, lshift(more_capabilities, 16))
 
-    print("server capabilities: ", capabilities)
+    -- print("server capabilities: ", capabilities)
 
     -- local len = strbyte(packet, pos)
     local len = 21 - 8 - 1
 
-    print("scramble len: ", len)
+    -- print("scramble len: ", len)
 
     pos = pos + 1 + 10
 
@@ -611,7 +611,7 @@ function _M.connect(self, opts)
     end
 
     scramble = scramble .. scramble_part2
-    print("scramble: ", _dump(scramble))
+    -- print("scramble: ", _dump(scramble))
 
     local client_flags = 0x3f7cf;
 
@@ -645,11 +645,11 @@ function _M.connect(self, opts)
 
     local token = _compute_token(password, scramble)
 
-    print("token: ", _dump(token))
+    -- print("token: ", _dump(token))
 
     local req = _set_byte4(client_flags)
                 .. _set_byte4(self._max_packet_size)
-                .. "\0" -- TODO: add support for charset encoding
+                .. strchar(33) -- "\0" -- TODO: add support for charset encoding
                 .. strrep("\0", 23)
                 .. _to_cstring(user)
                 .. _to_binary_coded_string(token)
@@ -658,7 +658,7 @@ function _M.connect(self, opts)
     local packet_len = 4 + 4 + 1 + 23 + #user + 1
         + #token + 1 + #database + 1
 
-    print("packet content length: ", packet_len)
+    -- print("packet content length: ", packet_len)
     -- print("packet content: ", _dump(concat(req, "")))
 
     local bytes, err = _send_packet(self, req, packet_len)
@@ -666,7 +666,7 @@ function _M.connect(self, opts)
         return nil, "failed to send client authentication packet: " .. err
     end
 
-    print("packet sent ", bytes, " bytes")
+    -- print("packet sent ", bytes, " bytes")
 
     local packet, typ, len, err = _recv_packet(self)
     if not packet then
@@ -860,7 +860,7 @@ local function read_result(self, out_conn)
             return nil, err
         end
 
-        bytes, err = out_conn.sock:send(packet)
+        bytes, err = out_conn:send_packet(packet, len)
         if err ~= nil then
             ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
             self:close()

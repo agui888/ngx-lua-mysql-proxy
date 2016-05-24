@@ -12,6 +12,7 @@ local utils = require "myshard.proxy.utils"
 local commad = require "myshard.proxy.commad"
 -- proxy handle
 local proxy_query = require "myshard.proxy.handle_query"
+local proxy_select = require "myshard.proxy.handle_select"
 
 local null = ngx.null
 local strsub = string.sub
@@ -101,12 +102,20 @@ function _M.dispath(self, pkg)
     local cmd = strbyte(pkg, 1)
     local data = strsub(pkg, 2)
 
-    ngx.log(ngx.INFO, "dispath---pkg-->[ ",  data, " ]")
+    print(format("dispath-pkg cmd=>[%#x] data=[%s]", cmd, data))
 
     if cmd == commad.COM_QUIT then
         return "closed"
     elseif cmd == commad.COM_QUERY then
         return proxy_query.handle(self, data)
+	elseif cmd == commad.COM_FIELD_LIST then
+		return proxy_select.handle_field_list(self, data)
+	elseif cmd == commad.COM_INIT_DB then
+		self.db = data
+		local bytes, err = mysqld.send_ok(self)
+		return err
+	else 
+	    print(format(" **** Commad[%#x] not supported data=[%s]", cmd, data))
     end
     return pkg, nil
 end
