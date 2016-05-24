@@ -19,8 +19,9 @@ function _M.new(self, a, b ...)
 end
 
 -- 模块导出功能函数
-function _M.func_123(self)
-    return self.a * self.b
+function _M.handle(self, query)
+    print("query-string: ", query)
+    return nil
 end
 
 

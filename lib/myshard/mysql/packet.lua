@@ -190,7 +190,7 @@ function _M.recv_packet(conn)
 
     local len, pos = _M.get_byte3(data, 1)
 
-    print("packet length: ", len)
+    -- print("packet length: ", len)
 
     if len == 0 then
         return nil, nil, "empty packet"

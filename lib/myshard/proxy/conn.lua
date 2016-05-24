@@ -9,6 +9,9 @@ local const = require "myshard.mysql.const"
 local charset = require "myshard.mysql.charset"
 local packet = require "myshard.mysql.packet"
 local utils = require "myshard.proxy.utils"
+local commad = require "myshard.proxy.commad"
+-- proxy handle
+local proxy_query = require "myshard.proxy.handle_query"
 
 local null = ngx.null
 local strsub = string.sub
@@ -59,11 +62,6 @@ function _M.new(self)
     return setmetatable(map, mt)
 end
 
-function _M.use_db(self, db)
-    print("conn use_db:", db)
-    self.db = db
-end
-
 function _M.handshake(self)
     local err = mysqld.send_handshake(self)
     if err ~= nil then
@@ -93,7 +91,20 @@ function _M.handshake(self)
 end
 
 
+function _M.close(self)
+        ngx.log(ngx.INFO, "close.")
+end
+
+
 function _M.dispath(self, pkg)
+    local cmd = strbyte(pkg, 1)
+    local data = strsub(pkg, 2, -1)
+
+    if cmd == commad.COM_QUIT then
+        return "closed"
+    elseif cmd == commad.COM_QUERY then
+        return proxy_query.handle(data)
+    end
     return pkg, nil
 end
 
@@ -104,19 +115,28 @@ function _M.write(self, resutl)
     return ok, nil
 end
 
-function _M.close(self)
-        ngx.log(ngx.INFO, "close.")
-end
-
 function _M.event_loop(self)
+    local pkg, typ, err
     while true do
-        local pkg, typ, err = packet.recv_packet(self)
-        if err ~= nil or pkg == nil then
-                ngx.log(ngx.WARN, "recv err=", err, "typ=",typ)
-                return
+        pkg, typ, err = packet.recv_packet(self)
+        if err ~= nil then
+            ngx.log(ngx.WARN, "recv err=", err, "typ=", typ, " data=", pkg)
+            return
         end
-        local result, err = self:dispath(pkg)
-        local ok, err = self:write(result)
+
+        if typ == "EOF" or typ == "ERR" then
+            return
+        elseif type == "DATA" then
+            err = self:dispath(pkg)
+            if err ~= nil then
+                if err ~= "closed" then
+                    ngx.log(ngx.WARN, "dispath commad typ=", typ, " err=", err)
+                end
+                return
+            end
+        elseif typ == "OK" then
+            ngx.log(ngx.DEBUG, "recv 'OK',Nothing can be done. Continue event_loop.")
+        end
     end
 end
 
