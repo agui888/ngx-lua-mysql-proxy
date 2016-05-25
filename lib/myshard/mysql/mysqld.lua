@@ -12,7 +12,8 @@ local band = bit.band
 local lshift = bit.lshift
 local rshift = bit.rshift
 
-local packet = require "myshard.mysql.packet"
+local bytesio = require "myshard.mysql.bytesio"
+local packetio = require "myshard.mysql.packet"
 local const = require "myshard.mysql.const"
 local charset = require "myshard.mysql.charset"
 
@@ -25,17 +26,17 @@ local SERVER_VERISON = "5.6.30-ngxLuaMyShard-0.1"
 -- args: conn was myshard.proxy.conn
 local function _make_handshake_pkg(conn)
     local pkg = strchar(PROTO_VERISON)
-            .. packet.to_cstring(SERVER_VERISON)
-            .. packet.set_byte4(conn.connection_id)
-            .. packet.to_cstring(strsub(conn.salt, 1, 8))   -- auth-plugin-data-part-1
-            .. packet.set_byte2(const.DEFAULT_CAPABILITY)
+            .. bytesio.to_cstring(SERVER_VERISON)
+            .. bytesio.set_byte4(conn.connection_id)
+            .. bytesio.to_cstring(strsub(conn.salt, 1, 8))   -- auth-plugin-data-part-1
+            .. bytesio.set_byte2(const.DEFAULT_CAPABILITY)
             .. strchar(charset.UTF8_COLLATION_ID)           -- just support charset=utf8
-            .. packet.set_byte2(conn.state)                 -- autocommit=true/false
+            .. bytesio.set_byte2(conn.state)                 -- autocommit=true/false
             .. strchar(band(rshift(const.DEFAULT_CAPABILITY, 16), 0xff))
             .. strchar(band(rshift(const.DEFAULT_CAPABILITY, 24), 0xff))
             .. strchar(0x15)                            -- filter string
             .. strchar(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)    -- reserved 10 [00]
-            .. packet.to_cstring(strsub(conn.salt, 9, -1))  -- auth-plugin-data-part-2
+            .. bytesio.to_cstring(strsub(conn.salt, 9, -1))  -- auth-plugin-data-part-2
 
     local pkg_len = 1 + strlen(SERVER_VERISON) + 1 + 4 + 9 + 1 + 2 + 1 + 2 + 3 + 10
                 + strlen(strsub(conn.salt, 9, -1)) 
@@ -48,7 +49,7 @@ function _M.send_handshake(conn)
     
     ngx.log(ngx.NOTICE, " send handshake pkg_len=>", len)
 
-    local bytes, err = packet.send_packet(conn, pkg, len)
+    local bytes, err = packetio.send_packet(conn, pkg, len)
     if not bytes then
         return "failed to send client handshake packet: " .. err
     end
@@ -58,19 +59,19 @@ end
 -- args: conn was myshard.proxy.conn
 -- read the handshake from the mysql-client side
 function _M.read_handshake_response(conn)
-    local data, typ, err= packet.recv_packet(conn)
+    local data, typ, err= packetio.recv_packet(conn)
     if not data then
         return false, err
     end
     if typ == "ERR" then
-        local errno, msg, sqlstate = packet.parse_err_packet(data)
+        local errno, msg, sqlstate = packetio.parse_err_packet(data)
         return false, msg, errno, sqlstate
     end
 
-    local capability, pos = packet.get_byte4(data, 1)
+    local capability, pos = bytesio.get_byte4(data, 1)
     conn.capability = capability
 
-    local size, pos = packet.get_byte4(data, pos)
+    local size, pos = bytesio.get_byte4(data, pos)
     print("client.max-packet-size:", size)
 
     -- charset, if you want to use another charset, use set names
@@ -82,7 +83,7 @@ function _M.read_handshake_response(conn)
     pos = pos + 23
 
     -- user name
-    local user, next_pos = packet.from_cstring(data, pos)
+    local user, next_pos = bytesio.from_cstring(data, pos)
     if user ~= nil then
         conn.user = user
         pos = next_pos
@@ -104,7 +105,7 @@ function _M.read_handshake_response(conn)
     end
 
     if bor(conn.capability, const.CLIENT_CONNECT_WITH_DB) > 0 then
-        local db, pos = packet.from_cstring(data, pos)
+        local db, pos = bytesio.from_cstring(data, pos)
         if db == nil or strlen(db) == 0 then
             return true, nil
         end
@@ -119,16 +120,16 @@ end
 function _M.send_ok(conn)
     local pkg_len = 3
     local pkg = strchar(const.OK_HEADER)
-             .. packet.to_length_encode_int(conn.affected_rows)  -- AffectedRows
-             .. packet.to_length_encode_int(conn.last_insert_id) -- InsertId
+             .. bytesio.to_length_encode_int(conn.affected_rows)  -- AffectedRows
+             .. bytesio.to_length_encode_int(conn.last_insert_id) -- InsertId
 
     if band(conn.capability, const.CLIENT_PROTOCOL_41) > 0 then
-        pkg = pkg .. packet.set_byte4(0) 
+        pkg = pkg .. bytesio.set_byte4(0) 
         pkg_len = pkg_len + 4
     else
         pkg = pkg .. strchar(0)
         pkg_len = pkg_len + 1
     end
-    return packet.send_packet(conn, pkg, pkg_len)
+    return packetio.send_packet(conn, pkg, pkg_len)
 end
 return _M

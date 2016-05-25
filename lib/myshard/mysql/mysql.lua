@@ -2,8 +2,8 @@
 
 
 local bit = require "bit"
-local bytesio = require "bytesio"
-local packetio = require "packet"
+local bytesio = require "myshard.mysql.bytesio"
+local packetio = require "myshard.mysql.packet"
 
 local tcp = ngx.socket.tcp
 local null = ngx.null
@@ -100,7 +100,7 @@ function _M.new(self)
     if not sock then
         return nil, err
     end
-    return setmetatable({ sock = sock, name="mysql" }, mt)
+    return setmetatable({ sock = sock, name="mysql-cli" }, mt)
 end
 
 
@@ -402,8 +402,8 @@ local function read_result(self, out_conn)
         return nil, "not initialized"
     end
 
-    print("goin to recv_packet on read_result")
-    local packet, typ, len, err = _recv_packet(self)
+    print(self.name, " goin to recv_packet on read_result .")
+    local packet, typ, len, err = packetio.recv_packet(self)
     if not packet then
         print("read-result: errp=[", err, "] len=[", len, "]")
         return nil, err
@@ -411,12 +411,12 @@ local function read_result(self, out_conn)
     print("read-result: typ=[", typ, "] len=[", len, "]")
     if typ == "ERR" then
         self.state = STATE_CONNECTED
-        local errno, msg, sqlstate = _parse_err_packet(packet)
+        local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
 
     if typ == 'OK' then
-        local res = _parse_ok_packet(packet)
+        local res = packetio.parse_ok_packet(packet)
         if res and band(res.server_status, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
             return res, "again"
         end
@@ -442,15 +442,16 @@ local function read_result(self, out_conn)
 
     --print("read the result set header packet")
 
-    local field_count, extra = _parse_result_set_header_packet(packet)
+    local field_count, extra = packetio.parse_result_set_header_packet(packet)
 
     --print("field count: ", field_count)
     for i = 1, field_count do
-        local packet, err, errno, sqlstate = _recv_field_packet(self)
+--        local packet, err, errno, sqlstate = packetio.recv_field_packet(self)
+		local packet, typ, len, err = packetio.recv_packet(self)
         if not packet then
             return nil, err, errno, sqlstate
         end
-        local len = errno
+--        local len = errno
 
         bytes, err = out_conn:send_packet(packet, len)
         if err ~= nil then
@@ -461,7 +462,7 @@ local function read_result(self, out_conn)
           end
     end
 
-    packet, typ, len, err = _recv_packet(self)
+    packet, typ, len, err = packetio.recv_packet(self)
     if not packet then
         return nil, err
     end
@@ -481,7 +482,7 @@ local function read_result(self, out_conn)
     local i = 0
     while true do
         --print("reading a row")
-        packet, typ, len, err = _recv_packet(self)
+        packet, typ, len, err = packetio.recv_packet(self)
         if not packet then
             return nil, err
         end
@@ -494,7 +495,7 @@ local function read_result(self, out_conn)
           end
 
         if typ == 'EOF' then
-            local warning_count, status_flags = _parse_eof_packet(packet)
+            local warning_count, status_flags = packetio.parse_eof_packet(packet)
             --print("status flags: ", status_flags)
             if band(status_flags, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
                 return rows, "again"
@@ -539,7 +540,7 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
     local cmd_packet = strchar(cmd) .. pkg
     local packet_len = 1 + pkg_len
 
-    print(format("send cmd[%#x] data[%s] len[%d]",cmd, cmd_packet, packet_len ))
+    print(format("%s -> send cmd[%#x] data[%s] len[%d]",self.name, cmd, cmd_packet, packet_len ))
     local bytes, err = packetio.send_packet(self, cmd_packet, packet_len)
     if not bytes then
         print("err = ", err)

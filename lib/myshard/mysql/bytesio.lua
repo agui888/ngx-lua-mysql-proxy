@@ -160,7 +160,7 @@ function _M.from_length_coded_str(data, pos)
 end
 
 
-local function _M.dump(data)
+function _M.dump(data)
     local len = #data
     local bytes = new_tab(len, 0)
     for i = 1, len do
@@ -170,7 +170,7 @@ local function _M.dump(data)
 end
 
 
-local function _M.dumphex(data)
+function _M.dumphex(data)
     local len = #data
     local bytes = new_tab(len, 0)
     for i = 1, len do

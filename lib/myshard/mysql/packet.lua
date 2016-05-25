@@ -167,7 +167,7 @@ function _M.parse_err_packet(packet)
 end
 
 
-function _M.parse_resultset_header_packet(packet)
+function _M.parse_result_set_header_packet(packet)
     local field_count, pos = bytesio.from_length_coded_bin(packet, 1)
 
     local extra
@@ -256,7 +256,7 @@ end
 
 
 function _M.recv_field_packet(self)
-    local packet, typ, err = _M.recv_packet(self)
+    local packet, typ, len, err = _M.recv_packet(self)
     if not packet then
         return nil, err
     end
@@ -271,8 +271,8 @@ function _M.recv_field_packet(self)
     end
 
     -- typ == 'DATA'
-
-    return _M.parse_field_packet(packet)
+    return packet, typ, len
+--    return _M.parse_field_packet(packet)
 end
 
 return _M
