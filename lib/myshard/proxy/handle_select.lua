@@ -2,7 +2,7 @@
 -- 
 --
 
-local backen = require "mysql.proxy.conn_backen"
+local backen = require "myshard.proxy.conn_backen"
 local commad = require "myshard.proxy.commad"
 
 local strsub = string.sub
@@ -15,7 +15,8 @@ local mt = { __index = _M }
 
 -- return err if did not success
 function _M.handle_field_list(conn, data, size)
-    local db, err = backen.get_mysql_connect()
+	local need_master = false
+    local db, err = backen.get_mysql_connect(conn, need_master)
     if err ~= nil then
         ngx.log(ngx.ERR, "failed to get_mysql_connect() err=", err)
         return err

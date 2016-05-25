@@ -34,3 +34,5 @@ function _M.get_mysql_connect(conn, is_master)
     assert(ok)
     return db, nil
 end
+
+return _M

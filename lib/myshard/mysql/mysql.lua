@@ -9,6 +9,7 @@ local strchar = string.char
 local strfind = string.find
 local format = string.format
 local strrep = string.rep
+local strlen = string.len
 local null = ngx.null
 local band = bit.band
 local bxor = bit.bxor
@@ -185,13 +186,13 @@ local function _send_packet(self, req, size)
 
     self.packet_no = self.packet_no + 1
 
-    -- print("packet no: ", self.packet_no)
+    print("packet no: ", self.packet_no)
 
     local packet = _set_byte3(size) .. strchar(self.packet_no) .. req
 
-    -- print("sending packet: ", _dump(packet))
+    print("sending packet: ", _dump(packet))
 
-    -- print("sending packet... of size " .. #packet)
+    print("sending packet... of size " .. #packet)
 
     return sock:send(packet)
 end
@@ -205,6 +206,7 @@ local function _recv_packet(self)
         if err == 'closed' then
             return nil, nil, -1, err 
         end
+		print("failed to receive packet header: ", err)
         return nil, nil, -2, "failed to receive packet header: " .. err
     end
 
@@ -212,7 +214,7 @@ local function _recv_packet(self)
 
     local len, pos = _get_byte3(data, 1)
 
-    --print("packet length: ", len)
+    print("packet length: ", len)
 
     if len == 0 then
         return nil, nil, -3, "empty packet"
@@ -224,7 +226,7 @@ local function _recv_packet(self)
 
     local num = strbyte(data, pos)
 
-    --print("recv packet: packet no: ", num)
+    print("recv packet: packet no: ", num)
 
     self.packet_no = num
 
@@ -734,29 +736,6 @@ function _M.server_ver(self)
     return self._server_ver
 end
 
-function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
-    if self.state ~= STATE_CONNECTED then
-        return nil, "cannot send commad in the current context: "
-                    .. (self.state or "nil")
-    end
-
-    local sock = self.sock
-    if not sock then
-        return nil, "not initialized"
-    end
-
-    local cmd_packet = strchar(cmd) .. pkg
-    local packet_len = 1 + pkg_len
-    local bytes, err = _send_packet(self, cmd_packet, packet_len)
-    if not bytes then
-        return nil, err
-    end
-
-    self.state = STATE_COMMAND_SENT
-
-    return read_result(self, out_conn)
-end
-
 
 local function send_query(self, query)
     if self.state ~= STATE_CONNECTED then
@@ -798,11 +777,13 @@ local function read_result(self, out_conn)
         return nil, "not initialized"
     end
 
+	print("goin to recv_packet on read_result")
     local packet, typ, len, err = _recv_packet(self)
     if not packet then
+        print("read-result: errp=[", err, "] len=[", len, "]")
         return nil, err
     end
-
+    print("read-result: typ=[", typ, "] len=[", len, "]")
     if typ == "ERR" then
         self.state = STATE_CONNECTED
         local errno, msg, sqlstate = _parse_err_packet(packet)
@@ -911,7 +892,7 @@ end
 _M.read_result = read_result
 
 -- args: out_conn was the instance of myshard.proxy.conn
-function _M.query(self, query, out_conn,)
+function _M.query(self, query, out_conn)
 
     local bytes, err = send_query(self, query)
     if not bytes then
@@ -920,6 +901,33 @@ function _M.query(self, query, out_conn,)
 
     return read_result(self, out_conn)
 
+end
+
+
+function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
+    if self.state ~= STATE_CONNECTED then
+        return nil, "cannot send commad in the current context: "
+                    .. (self.state or "nil")
+    end
+
+    local sock = self.sock
+    if not sock then
+        return nil, "not initialized"
+    end
+    self.packet_no = -1
+
+    local cmd_packet = strchar(cmd) .. pkg
+    local packet_len = 1 + pkg_len
+	print(format("send cmd[%#x] data[%s] len[%d]",cmd, cmd_packet, packet_len ))
+    local bytes, err = _send_packet(self, cmd_packet, packet_len)
+    if not bytes then
+		print("err = ", err)
+        return nil, err
+    end
+
+    self.state = STATE_COMMAND_SENT
+
+    return read_result(self, out_conn)
 end
 
 

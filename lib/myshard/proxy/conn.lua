@@ -29,6 +29,32 @@ local _M = {_VERSION = '0.1'}
 local mt = { __index = _M }
 
 
+function _M.dispath(self, data, size)
+    local cmd = strbyte(data, 1)
+    local data = strsub(data, 2)
+
+    print(format("dispath-pkg cmd=>[%#x] data=[%s]", cmd, data))
+
+    if cmd == commad.COM_QUIT then
+        return "closed"
+    elseif cmd == commad.COM_QUERY then
+        return proxy_query.handle_query(self, data, size)
+    elseif cmd == commad.COM_FIELD_LIST then
+        return proxy_select.handle_field_list(self, data, size)
+    elseif cmd == commad.COM_INIT_DB then
+        if strlen(data) > 0 then
+            self.db = data
+        end
+        local bytes, err = mysqld.send_ok(self)
+        return err
+    else 
+        print(format(" **** Commad[%#x] not supported data=[%s]", cmd, data))
+        return proxy_select.handle_field_list(self, data, size)
+    end
+    return pkg, nil
+end
+
+
 _M.conn_id = 2000
 function _M.new(self)
     local sock = ngx.req.socket(true)
@@ -100,32 +126,6 @@ end
 
 _M.send_packet = packet.send_packet
 
-function _M.dispath(self, data, size)
-    local cmd = strbyte(data, 1)
-    local data = strsub(data, 2)
-
-    print(format("dispath-pkg cmd=>[%#x] data=[%s]", cmd, data))
-
-    if cmd == commad.COM_QUIT then
-        return "closed"
-    elseif cmd == commad.COM_QUERY then
-        return proxy_query.handle_query(self, data, size)
-    elseif cmd == commad.COM_FIELD_LIST then
-        return proxy_select.handle_field_list(self, data, size)
-    elseif cmd == commad.COM_INIT_DB then
-        if strlen(data) > 0 then
-            self.db = data
-        end
-        local bytes, err = mysqld.send_ok(self)
-        return err
-    else 
-        print(format(" **** Commad[%#x] not supported data=[%s]", cmd, data))
-        return proxy_select.handle_field_list(self, data, size)
-    end
-    return pkg, nil
-end
-
-
 function _M.write(self, resutl)
     if result ~= nil then
         self.sock:send(result)
@@ -136,7 +136,7 @@ end
 function _M.event_loop(self)
     local pkg, typ, len, err
     while true do
-        pkg, typ, len err = packet.recv_packet(self)
+        pkg, typ, len, err = packet.recv_packet(self)
         if err ~= nil then
             ngx.log(ngx.WARN, "recv err=", err, " typ=", typ, " data=", pkg)
             return
