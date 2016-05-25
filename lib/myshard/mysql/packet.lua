@@ -184,9 +184,9 @@ function _M.recv_packet(conn)
     local data, err = sock:receive(4) -- packet header
     if not data then
         if err == 'closed' then
-            return nil, nil, err 
+            return nil, nil, -1, err 
         end
-        return nil, nil, "failed to receive packet header: " .. err
+        return nil, nil, -2, "failed to receive packet header: " .. err
     end
 
     --print("packet header: ", _dumphex(data))
@@ -196,16 +196,16 @@ function _M.recv_packet(conn)
     -- print("packet length: ", len)
 
     if len == 0 then
-        return nil, nil, "empty packet"
+        return nil, nil, -3, "empty packet"
     end
 
     if len > conn.max_packet_size then
-        return nil, nil, "packet size too big: " .. len
+        return nil, nil, -4, "packet size too big: " .. len
     end
 
     local num = strbyte(data, pos)
 
-    print("recv packet: packet no: ", num)
+    print("recv packet: packet no=[", num, "] len=[", len)
 
     conn.packet_no = num
 
@@ -214,7 +214,7 @@ function _M.recv_packet(conn)
     -- print("receive returned")
 
     if not data then
-        return nil, nil, "failed to read packet content: " .. err
+        return nil, nil, -5, "failed to read packet content: " .. err
     end
 
     -- print("packet content: ", _dump(data))
@@ -232,8 +232,8 @@ function _M.recv_packet(conn)
     elseif field_count <= 250 then
         typ = "DATA"
     end
-    print("recv packet typ: ", typ, " cmd: ", field_count)
-    return data, typ
+    -- print("recv packet typ: ", typ, " cmd: ", field_count)
+    return data, typ, len, nil
 end
 
 

@@ -19,6 +19,7 @@ local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
 local strfind = string.find
+local strlen = string.len
 local format = string.format
 local band = bit.band
 local error = error
@@ -63,6 +64,7 @@ function _M.new(self)
     return setmetatable(map, mt)
 end
 
+
 function _M.handshake(self)
     local err = mysqld.send_handshake(self)
     if err ~= nil then
@@ -98,27 +100,31 @@ end
 
 _M.send_packet = packet.send_packet
 
-function _M.dispath(self, pkg)
-    local cmd = strbyte(pkg, 1)
-    local data = strsub(pkg, 2)
+function _M.dispath(self, data, size)
+    local cmd = strbyte(data, 1)
+    local data = strsub(data, 2)
 
     print(format("dispath-pkg cmd=>[%#x] data=[%s]", cmd, data))
 
     if cmd == commad.COM_QUIT then
         return "closed"
     elseif cmd == commad.COM_QUERY then
-        return proxy_query.handle(self, data)
-	elseif cmd == commad.COM_FIELD_LIST then
-		return proxy_select.handle_field_list(self, data)
-	elseif cmd == commad.COM_INIT_DB then
-		self.db = data
-		local bytes, err = mysqld.send_ok(self)
-		return err
-	else 
-	    print(format(" **** Commad[%#x] not supported data=[%s]", cmd, data))
+        return proxy_query.handle_query(self, data, size)
+    elseif cmd == commad.COM_FIELD_LIST then
+        return proxy_select.handle_field_list(self, data, size)
+    elseif cmd == commad.COM_INIT_DB then
+        if strlen(data) > 0 then
+            self.db = data
+        end
+        local bytes, err = mysqld.send_ok(self)
+        return err
+    else 
+        print(format(" **** Commad[%#x] not supported data=[%s]", cmd, data))
+        return proxy_select.handle_field_list(self, data, size)
     end
     return pkg, nil
 end
+
 
 function _M.write(self, resutl)
     if result ~= nil then
@@ -128,9 +134,9 @@ function _M.write(self, resutl)
 end
 
 function _M.event_loop(self)
-    local pkg, typ, err
+    local pkg, typ, len, err
     while true do
-        pkg, typ, err = packet.recv_packet(self)
+        pkg, typ, len err = packet.recv_packet(self)
         if err ~= nil then
             ngx.log(ngx.WARN, "recv err=", err, " typ=", typ, " data=", pkg)
             return
@@ -139,7 +145,7 @@ function _M.event_loop(self)
         if typ == "ERR" then
             return
         elseif typ == "DATA" then
-            err = self:dispath(pkg)
+            err = self:dispath(pkg, len)
             if err ~= nil then
                 if err ~= "closed" then
                     ngx.log(ngx.WARN, "dispath commad typ=", typ, " err=", err)

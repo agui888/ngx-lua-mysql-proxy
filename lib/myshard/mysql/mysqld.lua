@@ -56,6 +56,7 @@ function _M.send_handshake(conn)
 end
 
 -- args: conn was myshard.proxy.conn
+-- read the handshake from the mysql-client side
 function _M.read_handshake_response(conn)
     local data, typ, err= packet.recv_packet(conn)
     if not data then
@@ -66,16 +67,9 @@ function _M.read_handshake_response(conn)
         return false, msg, errno, sqlstate
     end
 
-    local raw_capability, pos = packet.get_byte4(data, 1)
-    conn.capability =raw_capability --  bor(raw_capability, lshift(raw_capability, 16))
-    -- print("client-capability:", conn.capability)
-    -- local cap = band(conn.capability, const.DEFAULT_CAPABILITY)
-    -- if band(conn.capability, const.CLIENT_PROTOCOL_41) > 0 then
-    --         print("clent using proto >4.1")
-    -- else
-    --         print("warning..... using proto<=4.0")
-    -- end
-    -- max packet size
+    local capability, pos = packet.get_byte4(data, 1)
+    conn.capability = capability
+
     local size, pos = packet.get_byte4(data, pos)
     print("client.max-packet-size:", size)
 
@@ -114,11 +108,10 @@ function _M.read_handshake_response(conn)
         if db == nil or strlen(db) == 0 then
             return true, nil
         end
-
-		print("Connect with db: ", db)
+        ngx.log(ngx.DEBUG, "Connect with db: ", db)
         conn.db = db
-	else
-			print("without use db to connect.")
+    else
+        ngx.log(ngx.NOTICE, "without use db to connect.")
     end
     return true, nil
 end

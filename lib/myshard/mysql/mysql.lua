@@ -734,6 +734,29 @@ function _M.server_ver(self)
     return self._server_ver
 end
 
+function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
+    if self.state ~= STATE_CONNECTED then
+        return nil, "cannot send commad in the current context: "
+                    .. (self.state or "nil")
+    end
+
+    local sock = self.sock
+    if not sock then
+        return nil, "not initialized"
+    end
+
+    local cmd_packet = strchar(cmd) .. pkg
+    local packet_len = 1 + pkg_len
+    local bytes, err = _send_packet(self, cmd_packet, packet_len)
+    if not bytes then
+        return nil, err
+    end
+
+    self.state = STATE_COMMAND_SENT
+
+    return read_result(self, out_conn)
+end
+
 
 local function send_query(self, query)
     if self.state ~= STATE_CONNECTED then
@@ -816,8 +839,6 @@ local function read_result(self, out_conn)
     local field_count, extra = _parse_result_set_header_packet(packet)
 
     --print("field count: ", field_count)
-
-    --    local cols = new_tab(field_count, 0)
     for i = 1, field_count do
         local packet, err, errno, sqlstate = _recv_field_packet(self)
         if not packet then
@@ -854,7 +875,6 @@ local function read_result(self, out_conn)
     local i = 0
     while true do
         --print("reading a row")
-
         packet, typ, len, err = _recv_packet(self)
         if not packet then
             return nil, err
@@ -869,22 +889,18 @@ local function read_result(self, out_conn)
 
         if typ == 'EOF' then
             local warning_count, status_flags = _parse_eof_packet(packet)
-
             --print("status flags: ", status_flags)
-
             if band(status_flags, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
                 return rows, "again"
             end
-
             break
         end
+        i = i + 1
         -- if typ ~= 'DATA' then
             -- return nil, 'bad row packet type: ' .. typ
         -- end
-
         -- typ == 'DATA'
 --        local row = _parse_row_data_packet(packet, cols, compact)
-        i = i + 1
 --        rows[i] = row
     end
 
@@ -895,7 +911,7 @@ end
 _M.read_result = read_result
 
 -- args: out_conn was the instance of myshard.proxy.conn
-function _M.query(self, out_conn, query)
+function _M.query(self, query, out_conn,)
 
     local bytes, err = send_query(self, query)
     if not bytes then

@@ -1,26 +1,33 @@
 -- Copyright (C) 2016 HuangChuanTong@WPS.CN
--- --
+-- 
 --
 
-local conf = require "myshard.conf"
-local mysql = require "myshard.mysql.mysql"
+local backen = require "mysql.proxy.conn_backen"
+local commad = require "myshard.proxy.commad"
 
 local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
-local strfind = string.find
-local format = string.format
-local error = error
-local tonumber = tonumber
 
 local _M = {_VERSION = '1.0'}
 local mt = { __index = _M }
 
 
--- 模块导出功能函数
 -- return err if did not success
-function _M.handle_field_list(conn, data)
+function _M.handle_field_list(conn, data, size)
+    local db, err = backen.get_mysql_connect()
+    if err ~= nil then
+        ngx.log(ngx.ERR, "failed to get_mysql_connect() err=", err)
+        return err
+    end
+    assert(db)
 
+    local ok, err = db:send_commad(commad.COM_FIELD_LIST, data, size, conn)
+    if not ok then
+        ngx.log(ngx.ERR, "failed to send_commad to backen, err=", err)
+        return err
+    end
+    return nil
 end
 
 return _M
