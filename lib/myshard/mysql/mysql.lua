@@ -2,15 +2,20 @@
 
 
 local bit = require "bit"
-local sub = string.sub
+local bytesio = require "bytesio"
+local packetio = require "packet"
+
 local tcp = ngx.socket.tcp
+local null = ngx.null
+
+local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
 local strfind = string.find
 local format = string.format
 local strrep = string.rep
 local strlen = string.len
-local null = ngx.null
+
 local band = bit.band
 local bxor = bit.bxor
 local bor = bit.bor
@@ -72,97 +77,6 @@ converters[0x0d] = tonumber  -- year
 converters[0xf6] = tonumber  -- newdecimal
 
 
-local function _get_byte2(data, i)
-    local a, b = strbyte(data, i, i + 1)
-    return bor(a, lshift(b, 8)), i + 2
-end
-
-
-local function _get_byte3(data, i)
-    local a, b, c = strbyte(data, i, i + 2)
-    return bor(a, lshift(b, 8), lshift(c, 16)), i + 3
-end
-
-
-local function _get_byte4(data, i)
-    local a, b, c, d = strbyte(data, i, i + 3)
-    return bor(a, lshift(b, 8), lshift(c, 16), lshift(d, 24)), i + 4
-end
-
-
-local function _get_byte8(data, i)
-    local a, b, c, d, e, f, g, h = strbyte(data, i, i + 7)
-
-    -- XXX workaround for the lack of 64-bit support in bitop:
-    local lo = bor(a, lshift(b, 8), lshift(c, 16), lshift(d, 24))
-    local hi = bor(e, lshift(f, 8), lshift(g, 16), lshift(h, 24))
-    return lo + hi * 4294967296, i + 8
-
-    -- return bor(a, lshift(b, 8), lshift(c, 16), lshift(d, 24), lshift(e, 32),
-               -- lshift(f, 40), lshift(g, 48), lshift(h, 56)), i + 8
-end
-
-
-local function _set_byte2(n)
-    return strchar(band(n, 0xff), band(rshift(n, 8), 0xff))
-end
-
-
-local function _set_byte3(n)
-    return strchar(band(n, 0xff),
-                   band(rshift(n, 8), 0xff),
-                   band(rshift(n, 16), 0xff))
-end
-
-
-local function _set_byte4(n)
-    return strchar(band(n, 0xff),
-                   band(rshift(n, 8), 0xff),
-                   band(rshift(n, 16), 0xff),
-                   band(rshift(n, 24), 0xff))
-end
-
-
-local function _from_cstring(data, i)
-    local last = strfind(data, "\0", i, true)
-    if not last then
-        return nil, nil
-    end
-
-    return sub(data, i, last), last + 1
-end
-
-
-local function _to_cstring(data)
-    return data .. "\0"
-end
-
-
-local function _to_binary_coded_string(data)
-    return strchar(#data) .. data
-end
-
-
-local function _dump(data)
-    local len = #data
-    local bytes = new_tab(len, 0)
-    for i = 1, len do
-        bytes[i] = format("%x", strbyte(data, i))
-    end
-    return concat(bytes, " ")
-end
-
-
-local function _dumphex(data)
-    local len = #data
-    local bytes = new_tab(len, 0)
-    for i = 1, len do
-        bytes[i] = tohex(strbyte(data, i), 2)
-    end
-    return concat(bytes, " ")
-end
-
-
 local function _compute_token(password, scramble)
     if password == "" then
         return ""
@@ -181,302 +95,12 @@ local function _compute_token(password, scramble)
 end
 
 
-local function _send_packet(self, req, size)
-    local sock = self.sock
-
-    self.packet_no = self.packet_no + 1
-
-    print("packet no: ", self.packet_no)
-
-    local packet = _set_byte3(size) .. strchar(self.packet_no) .. req
-
-    print("sending packet: ", _dump(packet))
-
-    print("sending packet... of size " .. #packet)
-
-    return sock:send(packet)
-end
-
-
-local function _recv_packet(self)
-    local sock = self.sock
-
-    local data, err = sock:receive(4) -- packet header
-    if not data then
-        if err == 'closed' then
-            return nil, nil, -1, err 
-        end
-		print("failed to receive packet header: ", err)
-        return nil, nil, -2, "failed to receive packet header: " .. err
-    end
-
-    --print("packet header: ", _dump(data))
-
-    local len, pos = _get_byte3(data, 1)
-
-    print("packet length: ", len)
-
-    if len == 0 then
-        return nil, nil, -3, "empty packet"
-    end
-
-    if len > self._max_packet_size then
-        return nil, nil, -4, "packet size too big: " .. len
-    end
-
-    local num = strbyte(data, pos)
-
-    print("recv packet: packet no: ", num)
-
-    self.packet_no = num
-
-    data, err = sock:receive(len)
-
-    --print("receive returned")
-
-    if not data then
-        return nil, nil, -5, "failed to read packet content: " .. err
-    end
-
-    --print("packet content: ", _dump(data))
-    --print("packet content (ascii): ", data)
-
-    local field_count = strbyte(data, 1)
-
-    local typ
-    if field_count == 0x00 then
-        typ = "OK"
-    elseif field_count == 0xff then
-        typ = "ERR"
-    elseif field_count == 0xfe then
-        typ = "EOF"
-    elseif field_count <= 250 then
-        typ = "DATA"
-    end
-
-    return data, typ, len
-end
-
-
-local function _from_length_coded_bin(data, pos)
-    local first = strbyte(data, pos)
-
-    --print("LCB: first: ", first)
-
-    if not first then
-        return nil, pos
-    end
-
-    if first >= 0 and first <= 250 then
-        return first, pos + 1
-    end
-
-    if first == 251 then
-        return null, pos + 1
-    end
-
-    if first == 252 then
-        pos = pos + 1
-        return _get_byte2(data, pos)
-    end
-
-    if first == 253 then
-        pos = pos + 1
-        return _get_byte3(data, pos)
-    end
-
-    if first == 254 then
-        pos = pos + 1
-        return _get_byte8(data, pos)
-    end
-
-    return false, pos + 1
-end
-
-
-local function _from_length_coded_str(data, pos)
-    local len
-    len, pos = _from_length_coded_bin(data, pos)
-    if len == nil or len == null then
-        return null, pos
-    end
-
-    return sub(data, pos, pos + len - 1), pos + len
-end
-
-
-local function _parse_ok_packet(packet)
-    local res = new_tab(0, 5)
-    local pos
-
-    res.affected_rows, pos = _from_length_coded_bin(packet, 2)
-
-    --print("affected rows: ", res.affected_rows, ", pos:", pos)
-
-    res.insert_id, pos = _from_length_coded_bin(packet, pos)
-
-    --print("insert id: ", res.insert_id, ", pos:", pos)
-
-    res.server_status, pos = _get_byte2(packet, pos)
-
-    --print("server status: ", res.server_status, ", pos:", pos)
-
-    res.warning_count, pos = _get_byte2(packet, pos)
-
-    --print("warning count: ", res.warning_count, ", pos: ", pos)
-
-    local message = sub(packet, pos)
-    if message and message ~= "" then
-        res.message = message
-    end
-
-    --print("message: ", res.message, ", pos:", pos)
-
-    return res
-end
-
-
-local function _parse_eof_packet(packet)
-    local pos = 2
-
-    local warning_count, pos = _get_byte2(packet, pos)
-    local status_flags = _get_byte2(packet, pos)
-
-    return warning_count, status_flags
-end
-
-
-local function _parse_err_packet(packet)
-    local errno, pos = _get_byte2(packet, 2)
-    local marker = sub(packet, pos, pos)
-    local sqlstate
-    if marker == '#' then
-        -- with sqlstate
-        pos = pos + 1
-        sqlstate = sub(packet, pos, pos + 5 - 1)
-        pos = pos + 5
-    end
-
-    local message = sub(packet, pos)
-    return errno, message, sqlstate
-end
-
-
-local function _parse_result_set_header_packet(packet)
-    local field_count, pos = _from_length_coded_bin(packet, 1)
-
-    local extra
-    extra = _from_length_coded_bin(packet, pos)
-
-    return field_count, extra
-end
-
-
-local function _parse_field_packet(data)
-    local col = new_tab(0, 2)
-    local catalog, db, table, orig_table, orig_name, charsetnr, length
-    local pos
-    catalog, pos = _from_length_coded_str(data, 1)
-
-    --print("catalog: ", col.catalog, ", pos:", pos)
-
-    db, pos = _from_length_coded_str(data, pos)
-    table, pos = _from_length_coded_str(data, pos)
-    orig_table, pos = _from_length_coded_str(data, pos)
-    col.name, pos = _from_length_coded_str(data, pos)
-
-    orig_name, pos = _from_length_coded_str(data, pos)
-
-    pos = pos + 1 -- ignore the filler
-
-    charsetnr, pos = _get_byte2(data, pos)
-
-    length, pos = _get_byte4(data, pos)
-
-    col.type = strbyte(data, pos)
-
-    --[[
-    pos = pos + 1
-
-    col.flags, pos = _get_byte2(data, pos)
-
-    col.decimals = strbyte(data, pos)
-    pos = pos + 1
-
-    local default = sub(data, pos + 2)
-    if default and default ~= "" then
-        col.default = default
-    end
-    --]]
-
-    return col
-end
-
-
-local function _parse_row_data_packet(data, cols, compact)
-    local pos = 1
-    local ncols = #cols
-    local row
-    if compact then
-        row = new_tab(ncols, 0)
-    else
-        row = new_tab(0, ncols)
-    end
-    for i = 1, ncols do
-        local value
-        value, pos = _from_length_coded_str(data, pos)
-        local col = cols[i]
-        local typ = col.type
-        local name = col.name
-
-        --print("row field value: ", value, ", type: ", typ)
-
-        if value ~= null then
-            local conv = converters[typ]
-            if conv then
-                value = conv(value)
-            end
-        end
-
-        if compact then
-            row[i] = value
-
-        else
-            row[name] = value
-        end
-    end
-
-    return row
-end
-
-
-local function _recv_field_packet(self)
-    local packet, typ, len, err = _recv_packet(self)
-    if not packet then
-        return nil, err
-    end
-    
-    if typ == "ERR" then
-        local errno, msg, sqlstate = _parse_err_packet(packet)
-        return nil, msg, errno, sqlstate
-    end
-
-    if typ ~= 'DATA' then
-        return nil, "bad field packet type: " .. typ
-    end
-
-    -- typ == 'DATA'
-
-    return packet, type, len, nil
-end
-
-
 function _M.new(self)
     local sock, err = tcp()
     if not sock then
         return nil, err
     end
-    return setmetatable({ sock = sock }, mt)
+    return setmetatable({ sock = sock, name="mysql" }, mt)
 end
 
 
@@ -500,7 +124,7 @@ function _M.connect(self, opts)
     if not max_packet_size then
         max_packet_size = 1024 * 1024 -- default 1 MB
     end
-    self._max_packet_size = max_packet_size
+    self.max_packet_size = max_packet_size
 
     local ok, err
 
@@ -544,13 +168,13 @@ function _M.connect(self, opts)
         return 1
     end
 
-    local packet, typ, len, err = _recv_packet(self)
+    local packet, typ, len, err = packetio.recv_packet(self)
     if not packet then
         return nil, err
     end
 
     if typ == "ERR" then
-        local errno, msg, sqlstate = _parse_err_packet(packet)
+        local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
 
@@ -558,7 +182,7 @@ function _M.connect(self, opts)
 
     -- print("protocol version: ", self.protocol_ver)
 
-    local server_ver, pos = _from_cstring(packet, 2)
+    local server_ver, pos = bytesio.from_cstring(packet, 2)
     if not server_ver then
         return nil, "bad handshake initialization packet: bad server version"
     end
@@ -567,11 +191,11 @@ function _M.connect(self, opts)
 
     self._server_ver = server_ver
 
-    local thread_id, pos = _get_byte4(packet, pos)
+    local thread_id, pos = bytesio.get_byte4(packet, pos)
 
     -- print("thread id: ", thread_id)
 
-    local scramble = sub(packet, pos, pos + 8 - 1)
+    local scramble = strsub(packet, pos, pos + 8 - 1)
     if not scramble then
         return nil, "1st part of scramble not found"
     end
@@ -580,7 +204,7 @@ function _M.connect(self, opts)
 
     -- two lower bytes
     local capabilities  -- server capabilities
-    capabilities, pos = _get_byte2(packet, pos)
+    capabilities, pos = bytesio.get_byte2(packet, pos)
 
     -- print(format("server capabilities: %#x", capabilities))
 
@@ -589,14 +213,15 @@ function _M.connect(self, opts)
 
     print("server lang: ", self._server_lang)
 
-    self._server_status, pos = _get_byte2(packet, pos)
+    self._server_status, pos = bytesio.get_byte2(packet, pos)
 
     -- print("server status: ", self._server_status)
 
     local more_capabilities
-    more_capabilities, pos = _get_byte2(packet, pos)
+    more_capabilities, pos = bytesio.get_byte2(packet, pos)
 
     capabilities = bor(capabilities, lshift(more_capabilities, 16))
+    self._server_capabilities = capabilities
 
     -- print("server capabilities: ", capabilities)
 
@@ -607,7 +232,7 @@ function _M.connect(self, opts)
 
     pos = pos + 1 + 10
 
-    local scramble_part2 = sub(packet, pos, pos + len - 1)
+    local scramble_part2 = strsub(packet, pos, pos + len - 1)
     if not scramble_part2 then
         return nil, "2nd part of scramble not found"
     end
@@ -626,13 +251,13 @@ function _M.connect(self, opts)
         end
 
         -- send a SSL Request Packet
-        local req = _set_byte4(bor(client_flags, CLIENT_SSL))
-                    .. _set_byte4(self._max_packet_size)
+        local req = bytesio.set_byte4(bor(client_flags, CLIENT_SSL))
+                    .. bytesio.set_byte4(self.max_packet_size)
                     .. "\0" -- TODO: add support for charset encoding
                     .. strrep("\0", 23)
 
         local packet_len = 4 + 4 + 1 + 23
-        local bytes, err = _send_packet(self, req, packet_len)
+        local bytes, err = packetio.send_packet(self, req, packet_len)
         if not bytes then
             return nil, "failed to send client authentication packet: " .. err
         end
@@ -649,13 +274,13 @@ function _M.connect(self, opts)
 
     -- print("token: ", _dump(token))
 
-    local req = _set_byte4(client_flags)
-                .. _set_byte4(self._max_packet_size)
+    local req = bytesio.set_byte4(client_flags)
+                .. bytesio.set_byte4(self.max_packet_size)
                 .. strchar(33) -- "\0" -- TODO: add support for charset encoding
                 .. strrep("\0", 23)
-                .. _to_cstring(user)
-                .. _to_binary_coded_string(token)
-                .. _to_cstring(database)
+                .. bytesio.to_cstring(user)
+                .. bytesio.to_binary_coded_string(token)
+                .. bytesio.to_cstring(database)
 
     local packet_len = 4 + 4 + 1 + 23 + #user + 1
         + #token + 1 + #database + 1
@@ -663,20 +288,20 @@ function _M.connect(self, opts)
     -- print("packet content length: ", packet_len)
     -- print("packet content: ", _dump(concat(req, "")))
 
-    local bytes, err = _send_packet(self, req, packet_len)
+    local bytes, err = packetio.send_packet(self, req, packet_len)
     if not bytes then
         return nil, "failed to send client authentication packet: " .. err
     end
 
     -- print("packet sent ", bytes, " bytes")
 
-    local packet, typ, len, err = _recv_packet(self)
+    local packet, typ, len, err = packetio.recv_packet(self)
     if not packet then
         return nil, "client failed to receive the result packet: " .. err
     end
 
     if typ == 'ERR' then
-        local errno, msg, sqlstate = _parse_err_packet(packet)
+        local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
 
@@ -753,7 +378,7 @@ local function send_query(self, query)
     local cmd_packet = strchar(COM_QUERY) .. query
     local packet_len = 1 + #query
 
-    local bytes, err = _send_packet(self, cmd_packet, packet_len)
+    local bytes, err = packetio.send_packet(self, cmd_packet, packet_len)
     if not bytes then
         return nil, err
     end
@@ -777,7 +402,7 @@ local function read_result(self, out_conn)
         return nil, "not initialized"
     end
 
-	print("goin to recv_packet on read_result")
+    print("goin to recv_packet on read_result")
     local packet, typ, len, err = _recv_packet(self)
     if not packet then
         print("read-result: errp=[", err, "] len=[", len, "]")
@@ -877,18 +502,13 @@ local function read_result(self, out_conn)
             break
         end
         i = i + 1
-        -- if typ ~= 'DATA' then
-            -- return nil, 'bad row packet type: ' .. typ
-        -- end
-        -- typ == 'DATA'
---        local row = _parse_row_data_packet(packet, cols, compact)
---        rows[i] = row
     end
 
     self.state = STATE_CONNECTED
 
     return true, nil
 end
+
 _M.read_result = read_result
 
 -- args: out_conn was the instance of myshard.proxy.conn
@@ -918,10 +538,11 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
 
     local cmd_packet = strchar(cmd) .. pkg
     local packet_len = 1 + pkg_len
-	print(format("send cmd[%#x] data[%s] len[%d]",cmd, cmd_packet, packet_len ))
-    local bytes, err = _send_packet(self, cmd_packet, packet_len)
+
+    print(format("send cmd[%#x] data[%s] len[%d]",cmd, cmd_packet, packet_len ))
+    local bytes, err = packetio.send_packet(self, cmd_packet, packet_len)
     if not bytes then
-		print("err = ", err)
+        print("err = ", err)
         return nil, err
     end
 

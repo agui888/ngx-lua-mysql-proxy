@@ -74,6 +74,7 @@ function _M.new(self)
     end
 
     local map = {
+        name="myshard",
         sock=sock, 
         charset=charset.UTF8_CHARSET,
         user="",

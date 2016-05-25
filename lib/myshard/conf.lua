@@ -1,5 +1,13 @@
 -- Copyright (C) 2016 HuangChuanTong@WPS.CN
 
+if not ngx.config
+   or not ngx.config.ngx_lua_version
+   or ngx.config.ngx_lua_version < 9011
+then
+    error("ngx_lua 0.9.11+ required")
+end
+
+
 local _M = {}
 _M._VERSION = '1.0'
 
