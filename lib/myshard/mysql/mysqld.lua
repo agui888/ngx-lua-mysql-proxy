@@ -12,10 +12,10 @@ local band = bit.band
 local lshift = bit.lshift
 local rshift = bit.rshift
 
-local bytesio = require "myshard.mysql.bytesio"
-local packetio = require "myshard.mysql.packet"
 local const = require "myshard.mysql.const"
 local charset = require "myshard.mysql.charset"
+local bytesio = require "myshard.mysql.bytesio"
+local packetio = require "myshard.mysql.packetio"
 
 local _M = { _VERSION = '0.1' }
 local mt = { __index = _M }
@@ -25,9 +25,9 @@ local SERVER_VERISON = "5.5.55-shard-0.1"
 
 -- args: conn was myshard.proxy.conn
 local function _make_handshake_pkg(conn)
-    local pkg = strchar(PROTO_VERISON)
-            .. bytesio.to_cstring(SERVER_VERISON)
-            .. bytesio.set_byte4(conn.connection_id)
+    local pkg = strchar(PROTO_VERISON)  -- 1
+            .. bytesio.to_cstring(SERVER_VERISON) -- strlen()+1
+            .. bytesio.set_byte4(conn.connection_id)  -- 4
             .. bytesio.to_cstring(strsub(conn.salt, 1, 8))   -- auth-plugin-data-part-1
             .. bytesio.set_byte2(const.DEFAULT_CAPABILITY)
             .. strchar(charset.UTF8_COLLATION_ID)           -- just support charset=utf8

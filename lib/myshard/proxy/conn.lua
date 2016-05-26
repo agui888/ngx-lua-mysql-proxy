@@ -7,7 +7,7 @@ local conf = require "myshard.conf"
 local mysqld = require "myshard.mysql.mysqld"
 local const = require "myshard.mysql.const"
 local charset = require "myshard.mysql.charset"
-local packet = require "myshard.mysql.packet"
+local packetio = require "myshard.mysql.packetio"
 local utils = require "myshard.proxy.utils"
 local commad = require "myshard.proxy.commad"
 -- proxy handle
@@ -126,7 +126,7 @@ function _M.close(self)
     ngx.log(ngx.INFO, "close.")
 end
 
-_M.send_packet = packet.send_packet
+_M.send_packet = packetio.send_packet
 
 function _M.write(self, resutl)
     if result ~= nil then
@@ -138,7 +138,7 @@ end
 function _M.event_loop(self)
     local pkg, typ, len, err
     while true do
-        pkg, typ, len, err = packet.recv_packet(self)
+        pkg, typ, len, err = packetio.recv_packet(self)
         if err ~= nil then
             ngx.log(ngx.WARN, "recv err=", err, " typ=", typ, " data=", pkg)
             return

@@ -3,7 +3,7 @@
 
 local bit = require "bit"
 local bytesio = require "myshard.mysql.bytesio"
-local packetio = require "myshard.mysql.packet"
+local packetio = require "myshard.mysql.packetio"
 
 local tcp = ngx.socket.tcp
 local null = ngx.null
