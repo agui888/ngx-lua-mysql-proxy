@@ -25,7 +25,8 @@ function _M.get_mysql_connect(conn, is_master)
         password=conf.MySQL_PASS,
         charset='utf8'
     }
-    if not ok then
+
+	if not ok then
         ngx.log(ngx.ERR, "error when connect to [",
             conf.MySQL_HOST, ":", conf.MySQL_PORT, "], err=",
             err, " errno=", errno, "sqlstate=", sqlstate)

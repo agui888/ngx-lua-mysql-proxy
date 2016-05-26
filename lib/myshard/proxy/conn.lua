@@ -44,6 +44,7 @@ function _M.dispath(self, data, size)
     elseif cmd == commad.COM_INIT_DB then
         if strlen(data) > 0 then
             self.db = data
+			--return nil
         end
         local bytes, err = mysqld.send_ok(self)
         return err

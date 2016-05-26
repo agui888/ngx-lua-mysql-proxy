@@ -240,6 +240,8 @@ function _M.connect(self, opts)
     scramble = scramble .. scramble_part2
     -- print("scramble: ", _dump(scramble))
 
+--    local client_flags =0xa205;-- band(8717, self._server_capabilities) --0x3f7cf;
+--	print("client_flags=> ", client_flags)
     local client_flags = 0x3f7cf;
 
     local ssl_verify = opts.ssl_verify
@@ -542,7 +544,7 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
 
     print(format("%s -> send cmd[%#x] data[%s] len[%d]",self.name, cmd, cmd_packet, packet_len ))
     local bytes, err = packetio.send_packet(self, cmd_packet, packet_len)
-    if not bytes then
+    if not bytes or err ~=nil then
         print("err = ", err)
         return nil, err
     end

@@ -21,7 +21,7 @@ local _M = { _VERSION = '0.1' }
 local mt = { __index = _M }
 
 local PROTO_VERISON = 10
-local SERVER_VERISON = "5.6.30-ngxLuaMyShard-0.1"
+local SERVER_VERISON = "5.5.55-shard-0.1"
 
 -- args: conn was myshard.proxy.conn
 local function _make_handshake_pkg(conn)

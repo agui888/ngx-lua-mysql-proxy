@@ -9,7 +9,7 @@ local bytesio = require "myshard.mysql.bytesio"
 local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
-
+local format = string.format
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok then
@@ -45,12 +45,14 @@ function _M.send_packet(conn, req, size)
     local sock = conn.sock
 
     conn.packet_no = conn.packet_no + 1
-
-    print(conn.name, "-> sending packet no: ", conn.packet_no, " size=", size)
-
+    if conn.packet_no >= 256 then
+        conn.packet_no = 0
+	end
+    print(format("[%s] -> send packet-no=[%d] data-len=[%d] pkg-size=header+data=[%d]",
+		conn.name, conn.packet_no, size, size + 4))
     local packet = bytesio.set_byte3(size) .. strchar(conn.packet_no) .. req
 
-    -- print("sending packet: ", bytesio.dump(packet))
+    print(conn.name," sending packet: ", bytesio.dump(packet))
 
     return sock:send(packet)
 end
@@ -103,9 +105,9 @@ function _M.recv_packet(conn)
     elseif field_count <= 250 then
         typ = "DATA"
     end
-    print(conn.name, " -> recv packet: packet no=[", 
-        conn.packet_no, "] len=[", len, "] cmd=", field_count)
-
+	print(format("[%s] recv packet-no=[%d] len=[%d] cmd=[%s]",
+		conn.name, conn.packet_no, len, field_count))
+--    conn.packet_no = conn.packet_no + 1
     return data, typ, len, nil
 end
 
