@@ -157,6 +157,7 @@ function _M.event_loop(self)
         elseif typ == "OK" then
             ngx.log(ngx.DEBUG, "recv 'OK',Nothing can be done. Continue event_loop.")
         end
+		self.packet_no = 0
     end
 end
 

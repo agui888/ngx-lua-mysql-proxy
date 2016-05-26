@@ -278,7 +278,7 @@ function _M.connect(self, opts)
 
     local req = bytesio.set_byte4(client_flags)
                 .. bytesio.set_byte4(self.max_packet_size)
-                .. strchar(33) -- "\0" -- TODO: add support for charset encoding
+                .. strchar(0) -- "\0" -- TODO: add support for charset encoding
                 .. strrep("\0", 23)
                 .. bytesio.to_cstring(user)
                 .. bytesio.to_binary_coded_string(token)

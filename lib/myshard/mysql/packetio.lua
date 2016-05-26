@@ -9,7 +9,7 @@ local bytesio = require "myshard.mysql.bytesio"
 local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
-
+local format = string.format
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok then
