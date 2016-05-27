@@ -1,8 +1,13 @@
 -- the code copy from: https://github.com/openresty/lua-resty-mysql
 -- Copyright (C) 2012 Yichun Zhang (agentzh)
 -- modfiy by: HuangChuanTong@WPS.CN
--- mysql TCP 通信协议处理
--- 
+-- MySQL TCP 通信协议处理
+--
+-- 关于 MySQL服务端 返回的报文解释：
+-- parse_* 函数（6个），对应该MySQL服务端回应客户端的6种报文结构
+-- 只有6种报文，详情查看：http://hutaow.com/blog/2013/11/06/mysql-protocol-analysis/#43-
+----------------------------------
+
 local bit = require "bit"
 local bytesio = require "myshard.mysql.bytesio"
 
@@ -18,15 +23,15 @@ end
 
 
 local _M = { _VERSION = '0.15' }
-
+local mt = { __index = _M }
 
 -- constants
 -- 16MB - 1, the default max allowed packet size used by libmysqlclient
 local FULL_PACKET_SIZE = 16777215
-
-
-local mt = { __index = _M }
-
+local _M.PKG_TYPE_OK          = 0x00
+local _M.PKG_TYPE_EOF         = 0xfe
+local _M.PKG_TYPE_EER         = 0xff
+local _M.PKG_TYPE_DATA        = -1  --- 自定义，MySQL协议并没此消息类型，表示非以上3种
 
 -- mysql field value type converters
 local converters = new_tab(0, 8)
@@ -41,6 +46,8 @@ converters[0x0d] = tonumber  -- year
 converters[0xf6] = tonumber  -- newdecimal
 
 
+-- success: return bytes count was send, nil
+-- failed : return nil, err
 function _M.send_packet(conn, req, size)
     local sock = conn.sock
 
@@ -57,6 +64,8 @@ function _M.send_packet(conn, req, size)
 end
 
 
+-- success return packet_raw_data,type, len, nil
+-- failed  return nil, nil, [-5~-1],err
 function _M.recv_packet(conn)
     local sock = conn.sock
     local data, err = sock:receive(4) -- packet header
@@ -95,22 +104,27 @@ function _M.recv_packet(conn)
     local field_count = strbyte(data, 1)
 
     local typ
-    if field_count == 0x00 then
-        typ = "OK"
-    elseif field_count == 0xff then
-        typ = "ERR"
-    elseif field_count == 0xfe then
-        typ = "EOF"
-    elseif field_count <= 250 then
-        typ = "DATA"
+    if field_count <= 250 then
+        typ = _M.PKG_TYPE_DATA
+    else
+        typ = field_count
     end
+    -- if field_count == 0x00 then
+    --     typ = "OK"
+    -- elseif field_count == 0xff then
+    --     typ = "ERR"
+    -- elseif field_count == 0xfe then
+    --     typ = "EOF"
+    -- elseif field_count <= 250 then
+    --     typ = "DATA"
+    -- end
     print(format("[%s] recv packet-no=[%d] len=[%d] cmd=[%s]",
         conn.name, conn.packet_no, len, field_count))
 
-    return data, typ, len, nil
+    return data, typ, len, field_count
 end
 
-
+-------- 6种报文解释函数 ---------
 function _M.parse_ok_packet(packet)
     local res = new_tab(0, 5)
     local pos
@@ -253,27 +267,6 @@ function _M.parse_row_data_packet(data, cols, compact)
     end
 
     return row
-end
-
-
-function _M.recv_field_packet(self)
-    local packet, typ, len, err = _M.recv_packet(self)
-    if not packet then
-        return nil, err
-    end
-
-    if typ == "ERR" then
-        local errno, msg, sqlstate =_M.parse_err_packet(packet)
-        return nil, msg, errno, sqlstate
-    end
-
-    if typ ~= 'DATA' then
-        return nil, "bad field packet type: " .. typ
-    end
-
-    -- typ == 'DATA'
-    return packet, typ, len
---    return _M.parse_field_packet(packet)
 end
 
 return _M

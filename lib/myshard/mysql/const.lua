@@ -43,9 +43,5 @@ _M.CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA = 0x200000
 
 _M.SERVER_STATUS_AUTOCOMMIT = 0x0002
 
-_M.OK_HEADER          = 0x00
-_M.ERR_HEADER         = 0xff
-_M.EOF_HEADER         = 0xfe
---_M.LocalInFile_HEADER = 0xfb
 
 return _M

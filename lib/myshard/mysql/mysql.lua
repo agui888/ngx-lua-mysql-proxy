@@ -29,6 +29,11 @@ local setmetatable = setmetatable
 local error = error
 local tonumber = tonumber
 
+local OK = packetio.PKG_TYPE_OK
+local EOF = packetio.PKG_TYPE_EOF
+local ERR = packetio.PKG_TYPE_ERR
+local DATA = packetio.PKG_TYPE_DATA
+
 
 if not ngx.config
    or not ngx.config.ngx_lua_version
@@ -173,7 +178,7 @@ function _M.connect(self, opts)
         return nil, err
     end
 
-    if typ == "ERR" then
+    if typ == packetio.PKG_TYPE_EER then
         local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
@@ -206,7 +211,6 @@ function _M.connect(self, opts)
     local capabilities  -- server capabilities
     capabilities, pos = bytesio.get_byte2(packet, pos)
 
-    -- print(format("server capabilities: %#x", capabilities))
 
     self._server_lang = strbyte(packet, pos)
     pos = pos + 1
@@ -223,9 +227,7 @@ function _M.connect(self, opts)
     capabilities = bor(capabilities, lshift(more_capabilities, 16))
     self._server_capabilities = capabilities
 
-    -- print("server capabilities: ", capabilities)
-
-    -- local len = strbyte(packet, pos)
+    -- print(format("server capabilities: %#x", capabilities))
     local len = 21 - 8 - 1
 
     -- print("scramble len: ", len)
@@ -238,10 +240,7 @@ function _M.connect(self, opts)
     end
 
     scramble = scramble .. scramble_part2
-    -- print("scramble: ", _dump(scramble))
 
---    local client_flags =0xa205;-- band(8717, self._server_capabilities) --0x3f7cf;
---	print("client_flags=> ", client_flags)
     local client_flags = 0x3f7cf;
 
     local ssl_verify = opts.ssl_verify
@@ -302,16 +301,16 @@ function _M.connect(self, opts)
         return nil, "client failed to receive the result packet: " .. err
     end
 
-    if typ == 'ERR' then
+    if typ == ERR then
         local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
 
-    if typ == 'EOF' then
+    if typ == EOF then
         return nil, "old pre-4.1 authentication protocol not supported"
     end
 
-    if typ ~= 'OK' then
+    if typ ~= OK then
         return nil, "bad packet type: " .. typ
     end
 
@@ -391,10 +390,9 @@ local function send_query(self, query)
 
     return bytes
 end
-_M.send_query = send_query
 
 
-local function read_result(self, out_conn)
+local function read_query_result(self, out_conn)
     if self.state ~= STATE_COMMAND_SENT then
         return nil, "cannot read result in the current context: " .. self.state
     end
@@ -411,15 +409,16 @@ local function read_result(self, out_conn)
         return nil, err
     end
     print("read-result: typ=[", typ, "] len=[", len, "]")
-    if typ == "ERR" then
+    if typ == EER then
         self.state = STATE_CONNECTED
         local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
 
-    if typ == 'OK' then
+    if typ == OK then
         local res = packetio.parse_ok_packet(packet)
         if res and band(res.server_status, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
+            print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
             return res, "again"
         end
 
@@ -427,14 +426,13 @@ local function read_result(self, out_conn)
         return res
     end
 
-    if typ ~= 'DATA' then
+    if typ ~= DATA then
         self.state = STATE_CONNECTED
 
         return nil, "packet type " .. typ .. " not supported"
     end
 
-    -- typ == 'DATA'
-
+    -- typ == packetio.PKG_TYPE_DATA
     local bytes, err = out_conn:send_packet(packet, len) -- 
     if err ~= nil then
         ngx.log(ngx.NOTICE, "failed to send query resutl header packet to client, err=", err)
@@ -442,18 +440,13 @@ local function read_result(self, out_conn)
         return nil, err
     end
 
-    --print("read the result set header packet")
-
     local field_count, extra = packetio.parse_result_set_header_packet(packet)
-
-    --print("field count: ", field_count)
+    --print("read the result set header packet: field count: ", field_count)
     for i = 1, field_count do
---        local packet, err, errno, sqlstate = packetio.recv_field_packet(self)
-		local packet, typ, len, err = packetio.recv_packet(self)
+        local packet, typ, len, err = packetio.recv_packet(self)
         if not packet then
             return nil, err, errno, sqlstate
         end
---        local len = errno
 
         bytes, err = out_conn:send_packet(packet, len)
         if err ~= nil then
@@ -469,7 +462,7 @@ local function read_result(self, out_conn)
         return nil, err
     end
 
-    if typ ~= 'EOF' then
+    if typ ~= EOF then
         return nil, "unexpected packet type " .. typ .. " while eof packet is "
             .. "expected"
     end
@@ -480,7 +473,7 @@ local function read_result(self, out_conn)
         return nil, err
     end
 
-    -- typ == 'EOF'
+    -- typ == packetio.PKG_TYPE_EOF
     local i = 0
     while true do
         --print("reading a row")
@@ -496,9 +489,9 @@ local function read_result(self, out_conn)
             return nil, err
           end
 
-        if typ == 'EOF' then
+        if typ == EOF then
             local warning_count, status_flags = packetio.parse_eof_packet(packet)
-            --print("status flags: ", status_flags)
+            print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
             if band(status_flags, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
                 return rows, "again"
             end
@@ -512,8 +505,6 @@ local function read_result(self, out_conn)
     return true, nil
 end
 
-_M.read_result = read_result
-
 -- args: out_conn was the instance of myshard.proxy.conn
 function _M.query(self, query, out_conn)
 
@@ -522,10 +513,47 @@ function _M.query(self, query, out_conn)
         return nil, "failed to send query: " .. err
     end
 
-    return read_result(self, out_conn)
+    return read_query_result(self, out_conn)
 
 end
 
+
+local read_commad_result(self, out_conn)
+    print(self.name, " goin to recv_packet on read_commad_result .")
+
+    local packet, typ, len, field_count = packetio.recv_packet(self)
+    if not packet then
+        print("read-result: errp=[", field_count, "] len=[", len, "]")
+        return nil, field_count
+    end
+    print("read-result: typ=[", typ, "] len=[", len, "]")
+   
+    while true do
+        --print("reading a row")
+        packet, typ, len, err = packetio.recv_packet(self)
+        if not packet then
+            return nil, err
+        end
+
+        bytes, err = out_conn:send_packet(packet, len)
+        if err ~= nil then
+            ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
+            self:close()
+            return nil, err
+          end
+
+        if typ == EOF then
+            local warning_count, status_flags = packetio.parse_eof_packet(packet)
+            print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
+            if band(status_flags, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
+                return rows, "again"
+            end
+            break
+        end
+    end
+
+    self.state = STATE_CONNECTED
+end
 
 function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
     if self.state ~= STATE_CONNECTED then
@@ -551,12 +579,7 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
 
     self.state = STATE_COMMAND_SENT
 
-    return read_result(self, out_conn)
-end
-
-
-function _M.set_compact_arrays(self, value)
-    self.compact = value
+    return read_commad_result(self, out_conn)
 end
 
 

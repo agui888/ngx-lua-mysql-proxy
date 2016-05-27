@@ -17,11 +17,16 @@ local charset = require "myshard.mysql.charset"
 local bytesio = require "myshard.mysql.bytesio"
 local packetio = require "myshard.mysql.packetio"
 
-local _M = { _VERSION = '0.1' }
-local mt = { __index = _M }
-
 local PROTO_VERISON = 10
 local SERVER_VERISON = "5.5.55-shard-0.1"
+
+local OK = packetio.PKG_TYPE_OK
+local EOF = packetio.PKG_TYPE_EOF
+local ERR = packetio.PKG_TYPE_ERR
+local DATA = packetio.PKG_TYPE_DATA
+
+local _M = { _VERSION = '0.1' }
+local mt = { __index = _M }
 
 -- args: conn was myshard.proxy.conn
 local function _make_handshake_pkg(conn)
@@ -63,7 +68,7 @@ function _M.read_handshake_response(conn)
     if not data then
         return false, err
     end
-    if typ == "ERR" then
+    if typ == ERR then
         local errno, msg, sqlstate = packetio.parse_err_packet(data)
         return false, msg, errno, sqlstate
     end
