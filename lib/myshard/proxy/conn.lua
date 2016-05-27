@@ -23,7 +23,10 @@ local strlen = string.len
 local format = string.format
 local band = bit.band
 local error = error
-
+local OK = packetio.PKG_TYPE_OK
+local EOF = packetio.PKG_TYPE_EOF
+local ERR = packetio.PKG_TYPE_ERR
+local DATA = packetio.PKG_TYPE_DATA
 
 local _M = {_VERSION = '0.1'}
 local mt = { __index = _M }
@@ -139,14 +142,14 @@ function _M.event_loop(self)
     local pkg, typ, len, err
     while true do
         pkg, typ, len, err = packetio.recv_packet(self)
-        if err ~= nil then
+        if not pkg then
             ngx.log(ngx.WARN, "recv err=", err, " typ=", typ, " data=", pkg)
             return
         end
 
-        if typ == "ERR" then
+        if typ == ERR then
             return
-        elseif typ == "DATA" then
+        elseif typ == DATA then
             err = self:dispath(pkg, len)
             if err ~= nil then
                 if err ~= "closed" then
@@ -154,7 +157,7 @@ function _M.event_loop(self)
                 end
                 return
             end
-        elseif typ == "OK" then
+        elseif typ == OK then
             ngx.log(ngx.DEBUG, "recv 'OK',Nothing can be done. Continue event_loop.")
         end
 		self.packet_no = 0

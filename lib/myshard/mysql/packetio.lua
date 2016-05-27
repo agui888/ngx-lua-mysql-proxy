@@ -28,10 +28,10 @@ local mt = { __index = _M }
 -- constants
 -- 16MB - 1, the default max allowed packet size used by libmysqlclient
 local FULL_PACKET_SIZE = 16777215
-local _M.PKG_TYPE_OK          = 0x00
-local _M.PKG_TYPE_EOF         = 0xfe
-local _M.PKG_TYPE_EER         = 0xff
-local _M.PKG_TYPE_DATA        = -1  --- 自定义，MySQL协议并没此消息类型，表示非以上3种
+_M.PKG_TYPE_OK          = 0x00
+_M.PKG_TYPE_EOF         = 0xfe
+_M.PKG_TYPE_ERR         = 0xff
+_M.PKG_TYPE_DATA        = -1  --- 自定义，MySQL协议并没此消息类型，表示非以上3种
 
 -- mysql field value type converters
 local converters = new_tab(0, 8)
@@ -52,6 +52,9 @@ function _M.send_packet(conn, req, size)
     local sock = conn.sock
 
     conn.packet_no = conn.packet_no + 1
+	if conn.packet_no > 255 then
+			conn.packet_no = 0
+	end
 
     print(format("[%s] -> send packet-no=[%d] data-len=[%d] pkg-size=header+data=[%d]",
         conn.name, conn.packet_no, size, size + 4))
@@ -104,20 +107,15 @@ function _M.recv_packet(conn)
     local field_count = strbyte(data, 1)
 
     local typ
-    if field_count <= 250 then
-        typ = _M.PKG_TYPE_DATA
-    else
-        typ = field_count
-    end
-    -- if field_count == 0x00 then
-    --     typ = "OK"
-    -- elseif field_count == 0xff then
-    --     typ = "ERR"
-    -- elseif field_count == 0xfe then
-    --     typ = "EOF"
-    -- elseif field_count <= 250 then
-    --     typ = "DATA"
-    -- end
+	if field_count == 0x00 then
+			typ = _M.PKG_TYPE_OK
+	elseif field_count == 0xff then
+			typ = _M.PKG_TYPE_ERR
+	elseif field_count == 0xfe then
+			typ = _M.PKG_TYPE_EOF
+	elseif field_count <= 250 then
+			typ = _M.PKG_TYPE_DATA
+	end
     print(format("[%s] recv packet-no=[%d] len=[%d] cmd=[%s]",
         conn.name, conn.packet_no, len, field_count))
 

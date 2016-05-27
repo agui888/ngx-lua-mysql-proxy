@@ -178,7 +178,7 @@ function _M.connect(self, opts)
         return nil, err
     end
 
-    if typ == packetio.PKG_TYPE_EER then
+    if typ == ERR then
         local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
     end
@@ -409,7 +409,7 @@ local function read_query_result(self, out_conn)
         return nil, err
     end
     print("read-result: typ=[", typ, "] len=[", len, "]")
-    if typ == EER then
+    if typ == ERR then
         self.state = STATE_CONNECTED
         local errno, msg, sqlstate = packetio.parse_err_packet(packet)
         return nil, msg, errno, sqlstate
@@ -432,7 +432,7 @@ local function read_query_result(self, out_conn)
         return nil, "packet type " .. typ .. " not supported"
     end
 
-    -- typ == packetio.PKG_TYPE_DATA
+    -- typ == DATA
     local bytes, err = out_conn:send_packet(packet, len) -- 
     if err ~= nil then
         ngx.log(ngx.NOTICE, "failed to send query resutl header packet to client, err=", err)
@@ -473,8 +473,7 @@ local function read_query_result(self, out_conn)
         return nil, err
     end
 
-    -- typ == packetio.PKG_TYPE_EOF
-    local i = 0
+    -- typ == TYPE_EOF
     while true do
         --print("reading a row")
         packet, typ, len, err = packetio.recv_packet(self)
@@ -491,20 +490,19 @@ local function read_query_result(self, out_conn)
 
         if typ == EOF then
             local warning_count, status_flags = packetio.parse_eof_packet(packet)
-            print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
             if band(status_flags, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
-                return rows, "again"
+            	print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
+                return true, "again"
             end
             break
         end
-        i = i + 1
     end
 
     self.state = STATE_CONNECTED
 
     return true, nil
 end
-
+_M.read_query_result = read_query_result
 -- args: out_conn was the instance of myshard.proxy.conn
 function _M.query(self, query, out_conn)
 
@@ -518,7 +516,7 @@ function _M.query(self, query, out_conn)
 end
 
 
-local read_commad_result(self, out_conn)
+local function read_commad_result(self, out_conn)
     print(self.name, " goin to recv_packet on read_commad_result .")
 
     local packet, typ, len, field_count = packetio.recv_packet(self)
@@ -544,15 +542,16 @@ local read_commad_result(self, out_conn)
 
         if typ == EOF then
             local warning_count, status_flags = packetio.parse_eof_packet(packet)
-            print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
             if band(status_flags, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
-                return rows, "again"
+            	print("SERVER_MORE_RESULTS_EXISTS PLS read again, status flags: ", status_flags)
+                return true, "again"
             end
             break
         end
     end
 
     self.state = STATE_CONNECTED
+	return true, nil
 end
 
 function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
@@ -568,18 +567,22 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
     self.packet_no = -1
 
     local cmd_packet = strchar(cmd) .. pkg
-    local packet_len = 1 + pkg_len
+    local packet_len = 1 + #pkg 
 
     print(format("%s -> send cmd[%#x] data[%s] len[%d]",self.name, cmd, cmd_packet, packet_len ))
     local bytes, err = packetio.send_packet(self, cmd_packet, packet_len)
-    if not bytes or err ~=nil then
+    if not bytes or err ~= nil then
         print("err = ", err)
         return nil, err
     end
 
     self.state = STATE_COMMAND_SENT
 
-    return read_commad_result(self, out_conn)
+    local ok, err = read_commad_result(self, out_conn)
+	while err == 'again' do
+			ok, err = read_commad_result(self, out_conn)
+	end
+	return ok, err
 end
 
 

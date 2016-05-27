@@ -124,7 +124,7 @@ end
 
 function _M.send_ok(conn)
     local pkg_len = 3
-    local pkg = strchar(const.OK_HEADER)
+    local pkg = strchar(OK)
              .. bytesio.to_length_encode_int(conn.affected_rows)  -- AffectedRows
              .. bytesio.to_length_encode_int(conn.last_insert_id) -- InsertId
 

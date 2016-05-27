@@ -25,9 +25,19 @@ function _M.handle_query(conn, query, size)
 
     local res, err, errno, sqlstate = db:query(query, conn)
     if err ~= nil then
-        ngx.log(ngx.ERR, "query=[", query, "] err=", err,
-            "] errno=[", errno, "] sqlstate=", sqlstate)
-        return err
+		if err ~= 'again' then
+	       	ngx.log(ngx.ERR, "query=[", query, "] err=", err,
+    	        "] errno=[", errno, "] sqlstate=", sqlstate)
+   	    	return err
+		end
+		while err == 'again' do
+			if err ~= 'again' then
+	        	ngx.log(ngx.ERR, "query=[", query, "] err=", err,
+	            "] errno=[", errno, "] sqlstate=", sqlstate)
+    	    	return err
+			end
+			res, err, errno, sqlstate = db:read_query_result(conn)
+		end
     end
 
     print("end handl-query: ", query)
