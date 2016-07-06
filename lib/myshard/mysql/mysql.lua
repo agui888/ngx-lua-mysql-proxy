@@ -580,6 +580,7 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
 
     local ok, err = read_commad_result(self, out_conn)
 	while err == 'again' do
+			conn.packet_no = -1
 			ok, err = read_commad_result(self, out_conn)
 	end
 	return ok, err

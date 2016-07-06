@@ -53,7 +53,7 @@ function _M.send_packet(conn, req, size)
 
     conn.packet_no = conn.packet_no + 1
 	if conn.packet_no > 255 then
-			conn.packet_no = 0
+		conn.packet_no = 0
 	end
 
     print(format("[%s] -> send packet-no=[%d] data-len=[%d] pkg-size=header+data=[%d]",

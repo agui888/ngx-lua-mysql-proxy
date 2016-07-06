@@ -36,6 +36,7 @@ function _M.handle_query(conn, query, size)
 	            "] errno=[", errno, "] sqlstate=", sqlstate)
     	    	return err
 			end
+            conn.packet_no = -1
 			res, err, errno, sqlstate = db:read_query_result(conn)
 		end
     end
