@@ -2,33 +2,43 @@
 --
 -- 
 
-local conf = require "myshard.conf"
+local conf  = require "myshard.conf"
 local mysql = require "myshard.mysql.mysql"
 
-local _M = {_VERSION = '1.0'}
-local mt = { __index = _M }
+local _M = require "myshard.proxy.conn_class"
+
+-- @param is_master bool, true mean to write
+-- @return (mysql_conn, errmsg)
+function _M.get_mysql_connect(self, is_master)
+
+    local mysql_node
+
+    if is_master then
+        mysql_node = conf.get_mysql_write(self.db, "")
+    else
+        mysql_node = conf.get_mysql_read(self.db, "")
+    end
+    if mysql_node == nil then
+        return nil, "No MySQL node found."
+    end
 
 
--- args:
---   conn was instance of myshard.proxy.conn
---   is_master: bool, master mean to write,
-function _M.get_mysql_connect(conn, is_master)
     local db, err = mysql.new()
     assert(db)
     db:set_timeout(conf.BACKEN_TIMEOUT)
 
     local ok, err, errno, sqlstate = db:connect{
-        host=conf.MySQL_HOST,
-        port=conf.MySQL_PORT,
-        user=conf.MySQL_USER,
-        database=conn.db,
-        password=conf.MySQL_PASS,
-        charset='utf8'
+        host=mysql_node.host,
+        port=mysql_node.port,
+        user=mysql_node.user,
+        database=self.db,
+        password=mysql_node.passwd,
+        charset=mysql_node.charset or 'utf8'
     }
 
-	if not ok then
+    if not ok then
         ngx.log(ngx.ERR, "error when connect to [",
-            conf.MySQL_HOST, ":", conf.MySQL_PORT, "], err=",
+            mysql_node.host, ":", mysql_node.port, "], err=",
             err, " errno=", errno, "sqlstate=", sqlstate)
         return nil, err
     end

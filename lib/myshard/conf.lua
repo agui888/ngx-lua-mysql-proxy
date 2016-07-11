@@ -103,6 +103,8 @@ assert(_M.Rules == Rules)
 assert(Rules.db['db1'] ~= nil)
 ------ 以下内容请不要修改 ------
 local function _get_mysql(db, table, mode)
+  db, table = db:strip('`'), table:strip('`')
+
   local tb = _M.Rules.tables[db .. "." .. table]
   if tb then
     return _.Rules:get_mysql(tb, mode)
@@ -144,11 +146,11 @@ local function _get_mysql(db, table, mode)
 end
 
 function _M.get_mysql_write(self, db, table)
-  return _get_mysql(db:strip('`'), table:strip('`'), 'write')
+  return _get_mysql(db, table, 'write')
 end
 
 function _M.get_mysql_read(self, db, table)
-    return _get_mysql(db:strip('`'), table:strip('`'), 'read')
+    return _get_mysql(db, table, 'read')
 end
 
 if nil ~= ngx and (not ngx.config

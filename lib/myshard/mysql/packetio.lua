@@ -8,13 +8,13 @@
 -- 只有6种报文，详情查看：http://hutaow.com/blog/2013/11/06/mysql-protocol-analysis/#43-
 ----------------------------------
 
-local bit = require "bit"
-local bytesio = require "myshard.mysql.bytesio"
+local bit       = require "bit"
+local bytesio   = require "myshard.mysql.bytesio"
 
-local strsub = string.sub
-local strbyte = string.byte
-local strchar = string.char
-local format = string.format
+local strsub    = string.sub
+local strbyte   = string.byte
+local strchar   = string.char
+local format    = string.format
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok then
@@ -25,9 +25,8 @@ end
 local _M = { _VERSION = '0.15' }
 local mt = { __index = _M }
 
--- constants
--- 16MB - 1, the default max allowed packet size used by libmysqlclient
-local FULL_PACKET_SIZE = 16777215
+
+local FULL_PACKET_SIZE  = 16777215
 _M.PKG_TYPE_OK          = 0x00
 _M.PKG_TYPE_EOF         = 0xfe
 _M.PKG_TYPE_ERR         = 0xff
@@ -45,82 +44,6 @@ converters[0x09] = tonumber  -- int24
 converters[0x0d] = tonumber  -- year
 converters[0xf6] = tonumber  -- newdecimal
 
-
--- success: return bytes count was send, nil
--- failed : return nil, err
-function _M.send_packet(conn, req, size)
-    local sock = conn.sock
-
-    conn.packet_no = conn.packet_no + 1
-	if conn.packet_no > 255 then
-		conn.packet_no = 0
-	end
-
-    print(format("[%s] -> send packet-no=[%d] data-len=[%d] pkg-size=header+data=[%d]",
-        conn.name, conn.packet_no, size, size + 4))
-
-    local packet = bytesio.set_byte3(size) .. strchar(conn.packet_no) .. req
-
-    -- print("sending packet: ", bytesio.dump(packet))
-
-    return sock:send(packet)
-end
-
-
--- success return packet_raw_data,type, len, nil
--- failed  return nil, nil, [-5~-1],err
-function _M.recv_packet(conn)
-    local sock = conn.sock
-    local data, err = sock:receive(4) -- packet header
-    if not data then
-        if err == 'closed' then
-            print(conn.name, " sock closed")
-            return nil, nil, -1, err 
-        end
-        return nil, nil, -2, "failed to receive packet header: " .. err
-    end
-
-    local len, pos = bytesio.get_byte3(data, 1)
-
-    -- print("packet header: ", bytesio.dumphex(data))
-    -- print("packet length: ", len)
-
-    if len == 0 then
-        return nil, nil, -3, "empty packet"
-    end
-
-    if len > conn.max_packet_size then
-        return nil, nil, -4, "packet size too big: " .. len
-    end
-
-    conn.packet_no = strbyte(data, pos)
-
-    data, err = sock:receive(len)
-
-    if not data then
-        return nil, nil, -5, "failed to read packet content: " .. err
-    end
-
-    -- print("packet content: ", bytesio.dump(data))
-    -- print("packet content (ascii): ", data)
-
-    local field_count = strbyte(data, 1)
-
-    local typ
-	if field_count == 0x00 then
-			typ = _M.PKG_TYPE_OK
-	elseif field_count == 0xff then
-			typ = _M.PKG_TYPE_ERR
-	elseif field_count == 0xfe then
-			typ = _M.PKG_TYPE_EOF
-	elseif field_count <= 250 then
-			typ = _M.PKG_TYPE_DATA
-	end
-    print(format("[%s] recv packet-no=[%d] len=[%d] cmd=[%s]",
-        conn.name, conn.packet_no, len, field_count))
-
-    return data, typ, len, field_count
-end
 
 -------- 6种报文解释函数 ---------
 function _M.parse_ok_packet(packet)

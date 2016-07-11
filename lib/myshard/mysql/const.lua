@@ -8,10 +8,9 @@ local bxor = bit.bxor
 local bor = bit.bor
 local lshift = bit.lshift
 local rshift = bit.rshift
-local tohex = bit.tohex
 
 local _M = { _VERSION = '0.15' }
-local mt = { __index = _M }
+_M.__index = _M
 
 _M.CLIENT_LONG_PASSWORD = 0x0001
 _M.CLIENT_FOUND_ROWS = 0x0002

@@ -9,13 +9,11 @@ local strsub = string.sub
 local strbyte = string.byte
 local strchar = string.char
 
-local _M = {_VERSION = '1.0'}
-local mt = { __index = _M }
-
+local _M = require "myshard.proxy.conn_class"
 
 -- return err if did not success
 function _M.handle_field_list(conn, data, size)
-	local need_master = false
+    local need_master = false
     local db, err = backen.get_mysql_connect(conn, need_master)
     if err ~= nil then
         ngx.log(ngx.ERR, "failed to get_mysql_connect() err=", err)

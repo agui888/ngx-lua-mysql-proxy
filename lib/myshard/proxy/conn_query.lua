@@ -9,13 +9,12 @@ local strchar = string.char
 local strfind = string.find
 local format = string.format
 
-local _M = {_VERSION = '1.0'}
-local mt = { __index = _M }
+local _M = require "myshard.proxy.conn_class"
 
 -- return err if did not success
 function _M.handle_query(conn, query, size)
     print("query-string=[", query, "],db=[", conn.db, "]")
-	local need_master = false
+    local need_master = false
     local db, err = backen.get_mysql_connect(conn, need_master)
     if err ~= nil then
         ngx.log(ngx.ERR, "failed to get_mysql_connect() err=", err)
@@ -25,20 +24,20 @@ function _M.handle_query(conn, query, size)
 
     local res, err, errno, sqlstate = db:query(query, conn)
     if err ~= nil then
-		if err ~= 'again' then
-	       	ngx.log(ngx.ERR, "query=[", query, "] err=", err,
-    	        "] errno=[", errno, "] sqlstate=", sqlstate)
-   	    	return err
-		end
-		while err == 'again' do
-			if err ~= 'again' then
-	        	ngx.log(ngx.ERR, "query=[", query, "] err=", err,
-	            "] errno=[", errno, "] sqlstate=", sqlstate)
-    	    	return err
-			end
+        if err ~= 'again' then
+            ngx.log(ngx.ERR, "query=[", query, "] err=", err,
+                "] errno=[", errno, "] sqlstate=", sqlstate)
+               return err
+        end
+        while err == 'again' do
+            if err ~= 'again' then
+                ngx.log(ngx.ERR, "query=[", query, "] err=", err,
+                "] errno=[", errno, "] sqlstate=", sqlstate)
+                return err
+            end
             conn.packet_no = -1
-			res, err, errno, sqlstate = db:read_query_result(conn)
-		end
+            res, err, errno, sqlstate = db:read_query_result(conn)
+        end
     end
 
     print("end handl-query: ", query)

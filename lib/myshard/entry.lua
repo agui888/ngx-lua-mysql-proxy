@@ -4,6 +4,7 @@
 
 local bit = require "bit"
 local conn = require "myshard.proxy.conn"
+local conf = require "myshard.conf"
 
 local sub = string.sub
 local tcp = ngx.socket.tcp
@@ -29,26 +30,40 @@ local tonumber = tonumber
 
 ---------------------------------------------
 function abort(msg)
-	ngx.say(msg)
-	ngx.eof()
+    ngx.say(msg)
+    ngx.eof()
 end
+
+
+local _Start_Conn_Id = 10086
+
 -- request begin :
-function request_entry()
-	local c, err = conn.new()
-	assert(c)
+local function request_entry()
+    local conn_id = _Start_Conn_Id
 
-	local ok, err = c:handshake() -- mysql poto frist comminica
-	if ok ~= true then
-	    ngx.log(ngx.ERR, "handshake failed and close conn, err=", err)
-		abort(err)
-		return
-	end
+    local shard = ngx.shared.myshard
+    if shard == nil then 
+        ngx.log(ngx.NOTICE, "TODO: ngx.shared.myshard['conn_id']..")
+        _Start_Conn_Id = _Start_Conn_Id + 1
+    else
+        conn_id = shard:incr("conn_id", 1)
+    end
 
-	ngx.log(ngx.INFO, ngx.var.remote_addr, "handshake finish, go into event_loop(), conn_id=", c.conn_id)
-	-- entry event loop
-	c:event_loop()
-	ngx.log(ngx.INFO, "conn close, remote=[", ngx.var.remote_addr, ":", ngx.var.remote_port,"] conn_id=", c.conn_id)
-	c:close()
+    local c, err = conn.New(conn_id, conf.REQ_TIMEOUT)
+    assert(c)
+
+    local err = c:Handshake() -- mysql poto frist comminica
+    if nil ~= err then
+        ngx.log(ngx.ERR, "handshake failed and close conn, err=", err)
+        abort(err)
+        return
+    end
+
+    ngx.log(ngx.INFO, ngx.var.remote_addr, "handshake finish, go into event_loop Run(), conn_id=", c.conn_id)
+
+    c:Run() -- entry event loop
+    ngx.log(ngx.INFO, "conn close, remote=[", ngx.var.remote_addr, ":", ngx.var.remote_port,"] conn_id=", c.conn_id)
+    c:Close()
 end
 
 request_entry()
