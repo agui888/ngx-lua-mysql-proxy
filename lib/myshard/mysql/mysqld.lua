@@ -71,11 +71,11 @@ function _M.read_handshake_response(conn)
     conn.capability = capability
 
     local size, pos = packet.get_byte4(data, pos)
-    print("client.max-packet-size:", size)
+    -- print("client.max-packet-size:", size)
 
     -- charset, if you want to use another charset, use set names
     conn.collation_id = strbyte( strsub(data, pos, pos + 1))
-    print("charset_id=", conn.collation_id, " pos=", pos)
+    -- print("charset_id=", conn.collation_id, " pos=", pos)
     pos = pos + 1
 
     -- skip reserved 23[00]

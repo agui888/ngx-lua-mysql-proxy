@@ -585,7 +585,7 @@ function _M.connect(self, opts)
     self._server_lang = strbyte(packet, pos)
     pos = pos + 1
 
-    print("server lang: ", self._server_lang)
+    -- print("server lang: ", self._server_lang)
 
     self._server_status, pos = _get_byte2(packet, pos)
 
@@ -725,7 +725,7 @@ function _M.close(self)
     end
 
     self.state = nil
-
+    -- assert(false)
     return sock:close()
 end
 
@@ -754,7 +754,7 @@ function _M.send_commad(self, cmd, pkg, pkg_len, out_conn)
 
     self.state = STATE_COMMAND_SENT
 
-    return read_result(self, out_conn)
+    return self.read_result(self, out_conn)
 end
 
 
@@ -798,30 +798,48 @@ local function read_result(self, out_conn)
         return nil, "not initialized"
     end
 
+
     local packet, typ, len, err = _recv_packet(self)
     if not packet then
+        ngx.log(ngx.NOTICE, "err on recv_packet from cli, err=", err)
         return nil, err
     end
 
     if typ == "ERR" then
         self.state = STATE_CONNECTED
         local errno, msg, sqlstate = _parse_err_packet(packet)
-        return nil, msg, errno, sqlstate
+        local bytes, err = out_conn:send_packet(packet, len)
+        if err ~= nil then
+            ngx.log(ngx.NOTICE, "fail to send packet to out_conn err=",err) 
+            return nil, err  
+        end
+        return true, nil
+--        return nil, msg, errno, sqlstate
     end
 
     if typ == 'OK' then
         local res = _parse_ok_packet(packet)
         if res and band(res.server_status, SERVER_MORE_RESULTS_EXISTS) ~= 0 then
+            ngx.log(ngx.WARN, "TODO: read again and send to out_conn")
             return res, "again"
         end
 
         self.state = STATE_CONNECTED
+        local bytes, err = out_conn:send_packet(packet, len)
+        if err ~= nil then
+            ngx.log(ngx.NOTICE, "fail to send packet to out_conn err=",err)
+            return nil, err
+        end
         return res
     end
 
     if typ ~= 'DATA' then
         self.state = STATE_CONNECTED
-
+        local bytes, err = out_conn:send_packet(packet, len)
+        if err ~= nil then
+            ngx.log(ngx.NOTICE, "fail to send packet to out_conn err=",err)
+            return nil, err             
+        end 
         return nil, "packet type " .. typ .. " not supported"
     end
 
@@ -852,7 +870,7 @@ local function read_result(self, out_conn)
                 err, " remain [", field_count-i+1,"]cols did not read")
             self:close()
             return nil, err
-          end
+        end
     end
 
     packet, typ, len, err = _recv_packet(self)
@@ -866,7 +884,7 @@ local function read_result(self, out_conn)
     end
     bytes, err = out_conn:send_packet(packet, len)
     if err ~= nil then
-        ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
+        ngx.log(ngx.NOTICE, "failed to send query col EOF to out_conn, err=", err)
         self:close()
         return nil, err
     end
@@ -879,13 +897,13 @@ local function read_result(self, out_conn)
         if not packet then
             return nil, err
         end
-
+        
         bytes, err = out_conn:send_packet(packet, len)
         if err ~= nil then
             ngx.log(ngx.NOTICE, "failed to send query col EOF, err=", err)
-            self:close()
+        --                self:close()
             return nil, err
-          end
+        end
 
         if typ == 'EOF' then
             local warning_count, status_flags = _parse_eof_packet(packet)
@@ -911,7 +929,7 @@ end
 _M.read_result = read_result
 
 -- args: out_conn was the instance of myshard.proxy.conn
-function _M.query(self, query, out_conn,)
+function _M.query(self, query, out_conn)
 
     local bytes, err = send_query(self, query)
     if not bytes then
@@ -922,6 +940,50 @@ function _M.query(self, query, out_conn,)
 
 end
 
+local function raw_send_query(self, cmd_packet, packet_len)
+    if self.state ~= STATE_CONNECTED then
+        return nil, "cannot send query in the current context: "
+                    .. (self.state or "nil")
+    end
+
+    self.packet_no = -1
+--    local cmd_packet = strchar(COM_QUERY) .. query
+--    local packet_len = 1 + #query
+
+    local bytes, err = _send_packet(self, cmd_packet, packet_len)
+    if not bytes then
+        return nil, err
+    end
+
+    self.state = STATE_COMMAND_SENT
+    return bytes
+end
+
+local function raw_read_result(self, out_conn)
+    if self.state ~= STATE_CONNECTED then
+        return nil, "cannot send query in the current context: "
+                    .. (self.state or "nil")
+    end
+    local packet, typ, len, err = packetio.recv_packet(self)
+    if packet == nil then
+        ngx.log(ngx.ERR, "faild recv from backen-mysql err=", err)
+        return nil, err
+    end
+    local bytes, err = out_conn:send(packet, len)
+    
+
+
+
+end
+
+function _M.raw_query(self, data, size, out_conn)
+    local bytes, err = raw_send_query(data, size)
+    if not bytes then
+        return nil, "failed to send query: " .. err
+    end
+    
+    return read_result(self, out_conn)
+end
 
 function _M.set_compact_arrays(self, value)
     self.compact = value

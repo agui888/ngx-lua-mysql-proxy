@@ -168,14 +168,20 @@ function _M.send_packet(conn, req, size)
     local sock = conn.sock
 
     conn.packet_no = conn.packet_no + 1
+    if conn.packet_no > 255 then
+           conn.packet_no = 0
+    end
 
-     print("packet no: ", conn.packet_no, " size=", size)
+    -- print("packet no: ", conn.packet_no, " size=", size)
 
-    local packet = _M.set_byte3(size) .. strchar(conn.packet_no) .. req
+    local packet = _M.set_byte3(size) .. strchar(conn.packet_no) 
+    
+    sock:send(packet)
+    return sock:send(req)
 
     -- print("sending packet: ", _dump(packet))
 
-    return sock:send(packet)
+--    return sock:send(packet)
 end
 
 
@@ -189,7 +195,7 @@ function _M.recv_packet(conn)
         return nil, nil, -2, "failed to receive packet header: " .. err
     end
 
-    --print("packet header: ", _dumphex(data))
+    -- print("packet header: ", _dumphex(data))
 
     local len, pos = _M.get_byte3(data, 1)
 
@@ -205,7 +211,7 @@ function _M.recv_packet(conn)
 
     local num = strbyte(data, pos)
 
-    print("recv packet: packet no=[", num, "] len=[", len)
+    -- print("recv packet: packet no=[", num, "] len=[", len)
 
     conn.packet_no = num
 

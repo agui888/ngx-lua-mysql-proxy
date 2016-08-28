@@ -21,7 +21,7 @@ function _M.get_mysql_connect(conn, is_master)
         host=conf.MySQL_HOST,
         port=conf.MySQL_PORT,
         user=conf.MySQL_USER,
-        database=conn.db,
+        database="test",
         password=conf.MySQL_PASS,
         charset='utf8'
     }
@@ -34,3 +34,5 @@ function _M.get_mysql_connect(conn, is_master)
     assert(ok)
     return db, nil
 end
+
+return _M

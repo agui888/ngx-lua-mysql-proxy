@@ -2,7 +2,7 @@
 --
 -- 处理命令：query
 
-local backen = require "mysql.proxy.conn_backen"
+local backen = require "myshard.proxy.conn_backen"
 
 local strbyte = string.byte
 local strchar = string.char
@@ -14,8 +14,9 @@ local mt = { __index = _M }
 
 -- return err if did not success
 function _M.handle_query(conn, query, size)
-    print("query-string=[", query, "],db=[", conn.db, "]")
-    local db, err = backen.get_mysql_connect()
+    -- print("query-string=[", query, "],db=[", conn.db, "]")
+
+    local db, err = backen.get_mysql_connect(conn, true)
     if err ~= nil then
         ngx.log(ngx.ERR, "failed to get_mysql_connect() err=", err)
         return err
@@ -28,8 +29,10 @@ function _M.handle_query(conn, query, size)
             "] errno=[", errno, "] sqlstate=", sqlstate)
         return err
     end
+    
+    db:set_keepalive(30* 1000)
 
-    print("end handl-query: ", query)
+    ngx.log(ngx.INFO, "end handl-query: ", query)
     return nil
 end
 

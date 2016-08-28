@@ -104,8 +104,6 @@ function _M.dispath(self, data, size)
     local cmd = strbyte(data, 1)
     local data = strsub(data, 2)
 
-    print(format("dispath-pkg cmd=>[%#x] data=[%s]", cmd, data))
-
     if cmd == commad.COM_QUIT then
         return "closed"
     elseif cmd == commad.COM_QUERY then
@@ -113,18 +111,41 @@ function _M.dispath(self, data, size)
     elseif cmd == commad.COM_FIELD_LIST then
         return proxy_select.handle_field_list(self, data, size)
     elseif cmd == commad.COM_INIT_DB then
+        ngx.log(ngx.NOTICE, "COM_INIT_DB conn.id=", self.conn_id, " db=", data)
         if strlen(data) > 0 then
             self.db = data
         end
         local bytes, err = mysqld.send_ok(self)
         return err
     else 
-        print(format(" **** Commad[%#x] not supported data=[%s]", cmd, data))
+        ngx.log(ngx.ERR, " **** Commad[%#x] not supported data=[%s]", cmd, data)
         return proxy_select.handle_field_list(self, data, size)
     end
     return pkg, nil
 end
 
+local backen = require "myshard.proxy.conn_backen"
+
+function _M.tcp_proxy(self, data, size)
+    local db, err = backen.get_mysql_connect(self, true)
+    if err ~= nil then
+        ngx.log(ngx.ERR, "failed to get_mysql_connect() err=", err)
+        return err
+    end
+    assert(db)
+
+    local res, err, errno, sqlstate = db:raw_query(data, size, self)
+    if err ~= nil then
+        ngx.log(ngx.ERR, "query=[", query, "] err=", err,
+            "] errno=[", errno, "] sqlstate=", sqlstate)
+        return err
+    end
+
+    db:set_keepalive(30* 1000)
+
+    ngx.log(ngx.INFO, "end handl-query: ", query)
+    return nil
+end
 
 function _M.write(self, resutl)
     if result ~= nil then
@@ -136,7 +157,7 @@ end
 function _M.event_loop(self)
     local pkg, typ, len, err
     while true do
-        pkg, typ, len err = packet.recv_packet(self)
+        pkg, typ, len,err = packet.recv_packet(self)
         if err ~= nil then
             ngx.log(ngx.WARN, "recv err=", err, " typ=", typ, " data=", pkg)
             return
