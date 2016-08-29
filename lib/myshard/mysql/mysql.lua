@@ -959,26 +959,10 @@ local function raw_send_query(self, cmd_packet, packet_len)
     return bytes
 end
 
-local function raw_read_result(self, out_conn)
-    if self.state ~= STATE_CONNECTED then
-        return nil, "cannot send query in the current context: "
-                    .. (self.state or "nil")
-    end
-    local packet, typ, len, err = packetio.recv_packet(self)
-    if packet == nil then
-        ngx.log(ngx.ERR, "faild recv from backen-mysql err=", err)
-        return nil, err
-    end
-    local bytes, err = out_conn:send(packet, len)
-    
-
-
-
-end
-
 function _M.raw_query(self, data, size, out_conn)
-    local bytes, err = raw_send_query(data, size)
+    local bytes, err = raw_send_query(self, data, size)
     if not bytes then
+        ngx.log(ngx.ERR, "err=>", err)
         return nil, "failed to send query: " .. err
     end
     

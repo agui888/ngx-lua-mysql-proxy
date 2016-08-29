@@ -166,7 +166,8 @@ function _M.event_loop(self)
         if typ == "ERR" then
             return
         elseif typ == "DATA" then
-            err = self:dispath(pkg, len)
+              err=  self:tcp_proxy(pkg, len)
+--            err = self:dispath(pkg, len)
             if err ~= nil then
                 if err ~= "closed" then
                     ngx.log(ngx.WARN, "dispath commad typ=", typ, " err=", err)
