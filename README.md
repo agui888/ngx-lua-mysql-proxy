@@ -1,9 +1,38 @@
+性能：
+    分支tcp-raw上，实现了对mysql协议的最简单解释，还没解释sql，相当于对tcp包拆箱。
+    使用以下命令进行最简单压测，结果相当不理想
+
+    > mysqlslap -a  --concurrency=20 --number-of-queries=1000 -P 1234
+
+```
+# 直接测不同机上的mysql，（与直接使用ngx的tcp stream代理性能接近）
+root@172-16-9-28:# mysqlslap -a  --concurrency=20 --number-of-queries=1000 -P 3306
+Benchmark
+    Average number of seconds to run all queries: 0.483 seconds
+    Minimum number of seconds to run all queries: 0.483 seconds
+    Maximum number of seconds to run all queries: 0.483 seconds
+    Number of clients running queries: 20
+    Average number of queries per client: 50
+
+# 使用lua+stream模块，就是使用lua解释mysql协议
+root@172-16-9-28:# mysqlslap -a  --concurrency=20 --number-of-queries=1000 -P 1234
+Benchmark
+    Average number of seconds to run all queries: 1.472 seconds
+    Minimum number of seconds to run all queries: 1.472 seconds
+    Maximum number of seconds to run all queries: 1.472 seconds
+    Number of clients running queries: 20
+    Average number of queries per client: 50
+```
+
+    简单的结论就是： 慢3倍--- 太不理想了，暂停开发。
+
 Dev
 ---
 - openresty
 - lua 5.1
 - luarocks [penlight](https://github.comstevedonovan/Penlight)
 - [lua-sqlparser](https://github.com/toontong/lua-sqlparser)
+- [stream-lua-nginx-module](https://github.com/openresty/stream-lua-nginx-module#installation)
 
 关于MySQL协议简短说明
 ---
